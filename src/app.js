@@ -1,10 +1,16 @@
 const express = require("express");
 const pool = require("./config/database");
 const userRoutes = require("./routes/user.routes");
+const authRoutes = require("./routes/auth.routes");
+const authenticate = require("./middlewares/auth.middleware");
+const authorize = require("./middlewares/role.middleware");
+const swaggerUi = require("swagger-ui-express");
+const swaggerSpec = require("./config/swagger");
 
 const app = express();
 
 app.use(express.json());
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 app.get("/", (req, res) => {
   res.json({
@@ -31,4 +37,36 @@ app.get("/db-test", async (req, res) => {
 
 app.use("/api/users", userRoutes);
 
+app.use("/api/auth", authRoutes);
+
+/**
+ * @swagger
+ * /api/protected:
+ *   get:
+ *     summary: Access protected admin route
+ *     description: Test endpoint protected by JWT authentication and admin role authorization.
+ *     tags:
+ *       - Authorization
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Access granted
+ *       401:
+ *         description: Authentication required or token is invalid
+ *       403:
+ *         description: User does not have admin permission
+ */
+app.get(
+  "/api/protected",
+  authenticate,
+  authorize("admin"),
+  (req, res) => {
+    res.json({
+      success: true,
+      message: "You have access to this protected route",
+      user: req.user,
+    });
+  }
+);
 module.exports = app;
