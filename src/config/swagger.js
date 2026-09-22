@@ -1,7 +1,8 @@
 
 const swaggerJsdoc = require("swagger-jsdoc");
-const path = require("path");
-
+console.log("Swagger CWD:", process.cwd());
+console.log("Swagger __dirname:", __dirname);
+console.log("Swagger paths:", Object.keys(swaggerSpec.paths || {}));
 const productionUrl =
   process.env.API_BASE_URL ||
   "https://campus-helpdesk-api-campus-helpdesk-p5-a.vercel.app";
