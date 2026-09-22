@@ -6,6 +6,7 @@ const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    // Validate input
     if (!email || !password) {
       return res.status(400).json({
         success: false,
@@ -13,23 +14,23 @@ const login = async (req, res) => {
       });
     }
 
+    // Find user in Neon
     const result = await pool.query(
       `
       SELECT
-        u.user_id,
-        u.email,
-        u.password_hash,
-        u.full_name,
-        u.role_id,
-        r.role_name
-      FROM app_user u
-      JOIN role r
-        ON u.role_id = r.role_id
-      WHERE u.email = $1
+        user_id,
+        email,
+        password_hash,
+        full_name,
+        role,
+        is_active
+      FROM users
+      WHERE email = $1
       `,
       [email]
     );
 
+    // User not found
     if (result.rows.length === 0) {
       return res.status(401).json({
         success: false,
@@ -39,6 +40,15 @@ const login = async (req, res) => {
 
     const user = result.rows[0];
 
+    // Check if account is active
+    if (!user.is_active) {
+      return res.status(403).json({
+        success: false,
+        message: "User account is inactive",
+      });
+    }
+
+    // Check password
     const isPasswordValid = await bcrypt.compare(
       password,
       user.password_hash
@@ -51,12 +61,13 @@ const login = async (req, res) => {
       });
     }
 
+    // Create JWT
     const token = jwt.sign(
       {
         user_id: user.user_id,
         email: user.email,
-        role_id: user.role_id,
-        role_name: user.role_name,
+        full_name: user.full_name,
+        role: user.role,
       },
       process.env.JWT_SECRET,
       {
@@ -64,7 +75,8 @@ const login = async (req, res) => {
       }
     );
 
-    res.status(200).json({
+    // Response
+    return res.status(200).json({
       success: true,
       message: "Login successful",
       data: {
@@ -72,8 +84,8 @@ const login = async (req, res) => {
           user_id: user.user_id,
           email: user.email,
           full_name: user.full_name,
-          role_id: user.role_id,
-          role_name: user.role_name,
+          role: user.role,
+          is_active: user.is_active,
         },
         token,
       },
@@ -81,7 +93,7 @@ const login = async (req, res) => {
   } catch (error) {
     console.error("Login error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Login failed",
     });

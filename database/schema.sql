@@ -1,1194 +1,871 @@
---
--- PostgreSQL database dump
---
+-- =========================================================
+-- HLP — Campus Helpdesk & Maintenance Tickets
+-- FINAL DATABASE SCHEMA
+-- PostgreSQL / Neon
+-- =========================================================
 
-\restrict hM5YnCAYhX4sABrP4cUQRFh6jbAjJT1pwMLD8kTKZVQNbrchYDmJykY3ZhqcQYY
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- Dumped from database version 18.6
--- Dumped by pg_dump version 18.6
+BEGIN;
 
-SET statement_timeout = 0;
-SET lock_timeout = 0;
-SET idle_in_transaction_session_timeout = 0;
-SET transaction_timeout = 0;
-SET client_encoding = 'UTF8';
-SET standard_conforming_strings = on;
-SELECT pg_catalog.set_config('search_path', '', false);
-SET check_function_bodies = false;
-SET xmloption = content;
-SET client_min_messages = warning;
-SET row_security = off;
+-- =========================================================
+-- USERS
+-- =========================================================
 
-SET default_tablespace = '';
+CREATE TABLE users (
+    user_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-SET default_table_access_method = heap;
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    full_name VARCHAR(150) NOT NULL,
 
---
--- Name: ai_model_version; Type: TABLE; Schema: public; Owner: -
---
+    role VARCHAR(30) NOT NULL
+        CHECK (role IN (
+            'REPORTER',
+            'AGENT',
+            'TECHNICIAN',
+            'MANAGER',
+            'AUDITOR'
+        )),
 
-CREATE TABLE public.ai_model_version (
-    model_version_id integer NOT NULL,
-    model_name character varying(150) NOT NULL,
-    version character varying(100) NOT NULL,
-    model_type character varying(100) NOT NULL,
-    task character varying(150) NOT NULL,
-    dataset_version character varying(100),
-    metric_name character varying(100),
-    metric_value numeric,
-    is_active boolean DEFAULT true NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    approved_by UUID NULL,
+    approved_at TIMESTAMPTZ NULL,
+
+    created_by UUID NULL,
+    updated_by UUID NULL,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- =========================================================
+-- SUPPORT TEAMS
+-- =========================================================
 
---
--- Name: ai_model_version_model_version_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
+CREATE TABLE support_teams (
+    support_team_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-ALTER TABLE public.ai_model_version ALTER COLUMN model_version_id ADD GENERATED ALWAYS AS IDENTITY (
-    SEQUENCE NAME public.ai_model_version_model_version_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
+    team_name VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT NULL,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- =========================================================
+-- LOCATIONS
+-- =========================================================
 
---
--- Name: app_user; Type: TABLE; Schema: public; Owner: -
---
+CREATE TABLE locations (
+    location_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-CREATE TABLE public.app_user (
-    user_id uuid DEFAULT gen_random_uuid() NOT NULL,
-    email character varying(255) NOT NULL,
-    password_hash character varying(255) NOT NULL,
-    full_name character varying(255) NOT NULL,
-    role_id integer NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    building VARCHAR(100) NOT NULL,
+    floor VARCHAR(50) NULL,
+    room_code VARCHAR(50) NOT NULL,
+    description TEXT NULL,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    UNIQUE (building, room_code)
 );
 
+-- =========================================================
+-- BUSINESS HOURS
+-- =========================================================
 
---
--- Name: asset_reference; Type: TABLE; Schema: public; Owner: -
---
+CREATE TABLE business_hours (
+    business_hours_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-CREATE TABLE public.asset_reference (
-    asset_id character varying(100) NOT NULL,
-    asset_tag character varying(150) NOT NULL,
-    label character varying(255) NOT NULL,
-    location_id integer NOT NULL,
-    status character varying(50) NOT NULL
+    name VARCHAR(100) NOT NULL UNIQUE,
+    timezone VARCHAR(100) NOT NULL,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE business_hours_days (
+    business_hours_id UUID NOT NULL,
+    day_of_week INTEGER NOT NULL,
 
---
--- Name: assignment; Type: TABLE; Schema: public; Owner: -
---
+    start_time TIME NULL,
+    end_time TIME NULL,
 
-CREATE TABLE public.assignment (
-    assignment_id uuid DEFAULT gen_random_uuid() NOT NULL,
-    ticket_id uuid NOT NULL,
-    team_id integer NOT NULL,
-    assignee_id uuid,
-    assigned_by uuid NOT NULL,
-    assigned_at timestamp with time zone DEFAULT now() NOT NULL,
-    unassigned_at timestamp with time zone,
-    reason text
+    is_working_day BOOLEAN NOT NULL DEFAULT TRUE,
+
+    PRIMARY KEY (business_hours_id, day_of_week),
+
+    CONSTRAINT fk_business_hours_days_hours
+        FOREIGN KEY (business_hours_id)
+        REFERENCES business_hours(business_hours_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT chk_business_hours_day
+        CHECK (day_of_week BETWEEN 0 AND 6),
+
+    CONSTRAINT chk_business_hours_time
+        CHECK (
+            (start_time IS NULL AND end_time IS NULL)
+            OR
+            (start_time < end_time)
+        )
 );
 
+-- =========================================================
+-- CATEGORIES
+-- =========================================================
 
---
--- Name: attachment; Type: TABLE; Schema: public; Owner: -
---
+CREATE TABLE categories (
+    category_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-CREATE TABLE public.attachment (
-    attachment_id uuid DEFAULT gen_random_uuid() NOT NULL,
-    ticket_id uuid,
-    comment_id uuid,
-    file_uuid uuid NOT NULL,
-    file_path character varying(500) NOT NULL,
-    original_name character varying(255) NOT NULL,
-    file_type character varying(100),
-    file_size bigint NOT NULL,
-    uploaded_by uuid NOT NULL,
-    is_internal boolean DEFAULT false NOT NULL,
-    submitted_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT chk_attachment_single_parent CHECK ((((ticket_id IS NOT NULL) AND (comment_id IS NULL)) OR ((ticket_id IS NULL) AND (comment_id IS NOT NULL))))
+    category_name VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT NULL,
+
+    default_team_id UUID NULL,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- =========================================================
+-- SLA PROFILES
+-- =========================================================
 
---
--- Name: audit_log; Type: TABLE; Schema: public; Owner: -
---
+CREATE TABLE sla_profiles (
+    sla_profile_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-CREATE TABLE public.audit_log (
-    log_id uuid DEFAULT gen_random_uuid() NOT NULL,
-    actor_id uuid,
-    action character varying(100) NOT NULL,
-    entity_type character varying(100) NOT NULL,
-    entity_id character varying(255) NOT NULL,
-    ip_address inet,
-    "timestamp" timestamp with time zone DEFAULT now() NOT NULL
+    name VARCHAR(100) NOT NULL UNIQUE,
+
+    response_target_minutes INTEGER NOT NULL
+        CHECK (response_target_minutes > 0),
+
+    resolution_target_minutes INTEGER NOT NULL
+        CHECK (resolution_target_minutes > 0),
+
+    business_hours_id UUID NOT NULL,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT fk_sla_business_hours
+        FOREIGN KEY (business_hours_id)
+        REFERENCES business_hours(business_hours_id)
 );
 
+-- =========================================================
+-- PRIORITY MATRICES
+-- =========================================================
 
---
--- Name: business_hours; Type: TABLE; Schema: public; Owner: -
---
+CREATE TABLE priority_matrices (
+    priority_matrix_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-CREATE TABLE public.business_hours (
-    business_hours_id integer NOT NULL,
-    name character varying(150) NOT NULL,
-    timezone character varying(100) NOT NULL,
-    created_by uuid,
-    updated_by uuid,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    impact VARCHAR(30) NOT NULL,
+    urgency VARCHAR(30) NOT NULL,
+    priority VARCHAR(30) NOT NULL,
+
+    sla_profile_id UUID NOT NULL,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT fk_priority_sla
+        FOREIGN KEY (sla_profile_id)
+        REFERENCES sla_profiles(sla_profile_id),
+
+    CONSTRAINT uq_priority_active
+        UNIQUE (impact, urgency, is_active)
 );
 
+-- =========================================================
+-- ASSETS
+-- =========================================================
 
---
--- Name: business_hours_business_hours_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
+CREATE TABLE assets (
+    asset_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-ALTER TABLE public.business_hours ALTER COLUMN business_hours_id ADD GENERATED ALWAYS AS IDENTITY (
-    SEQUENCE NAME public.business_hours_business_hours_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
+    asset_tag VARCHAR(100) NOT NULL UNIQUE,
+    asset_type VARCHAR(100) NOT NULL,
+    asset_name VARCHAR(150) NULL,
+
+    location_id UUID NOT NULL,
+
+    description TEXT NULL,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT fk_assets_location
+        FOREIGN KEY (location_id)
+        REFERENCES locations(location_id)
 );
 
+-- =========================================================
+-- TICKETS
+-- =========================================================
 
---
--- Name: business_hours_schedule; Type: TABLE; Schema: public; Owner: -
---
+CREATE TABLE tickets (
+    ticket_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-CREATE TABLE public.business_hours_schedule (
-    schedule_id integer NOT NULL,
-    business_hours_id integer NOT NULL,
-    day_of_week character varying(20) NOT NULL,
-    start_time time without time zone,
-    end_time time without time zone,
-    is_working_day boolean DEFAULT true NOT NULL,
-    created_by uuid,
-    updated_by uuid,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    reference_number VARCHAR(50) NOT NULL UNIQUE,
+
+    reporter_id UUID NOT NULL,
+    category_id UUID NOT NULL,
+    location_id UUID NOT NULL,
+    asset_id UUID NULL,
+    sla_profile_id UUID NOT NULL,
+
+    title VARCHAR(255) NOT NULL,
+    description TEXT NOT NULL,
+
+    impact VARCHAR(30) NOT NULL,
+    urgency VARCHAR(30) NOT NULL,
+    priority VARCHAR(30) NOT NULL,
+
+    status VARCHAR(40) NOT NULL,
+
+    response_due_at TIMESTAMPTZ NOT NULL,
+    resolution_due_at TIMESTAMPTZ NOT NULL,
+
+    first_response_at TIMESTAMPTZ NULL,
+    resolved_at TIMESTAMPTZ NULL,
+    closed_at TIMESTAMPTZ NULL,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT fk_ticket_reporter
+        FOREIGN KEY (reporter_id)
+        REFERENCES users(user_id),
+
+    CONSTRAINT fk_ticket_category
+        FOREIGN KEY (category_id)
+        REFERENCES categories(category_id),
+
+    CONSTRAINT fk_ticket_location
+        FOREIGN KEY (location_id)
+        REFERENCES locations(location_id),
+
+    CONSTRAINT fk_ticket_asset
+        FOREIGN KEY (asset_id)
+        REFERENCES assets(asset_id),
+
+    CONSTRAINT fk_ticket_sla
+        FOREIGN KEY (sla_profile_id)
+        REFERENCES sla_profiles(sla_profile_id)
 );
 
+-- =========================================================
+-- USER TEAMS
+-- =========================================================
 
---
--- Name: business_hours_schedule_schedule_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
+CREATE TABLE user_teams (
+    user_id UUID NOT NULL,
+    support_team_id UUID NOT NULL,
 
-ALTER TABLE public.business_hours_schedule ALTER COLUMN schedule_id ADD GENERATED ALWAYS AS IDENTITY (
-    SEQUENCE NAME public.business_hours_schedule_schedule_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
+    is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+
+    joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    left_at TIMESTAMPTZ NULL,
+
+    PRIMARY KEY (user_id, support_team_id),
+
+    CONSTRAINT fk_user_team_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(user_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_user_team_support_team
+        FOREIGN KEY (support_team_id)
+        REFERENCES support_teams(support_team_id)
+        ON DELETE CASCADE
 );
 
+CREATE UNIQUE INDEX uq_user_primary_team
+ON user_teams(user_id)
+WHERE is_primary = TRUE;
 
---
--- Name: category; Type: TABLE; Schema: public; Owner: -
---
+-- =========================================================
+-- TECHNICIAN PROFILES
+-- =========================================================
 
-CREATE TABLE public.category (
-    category_id integer NOT NULL,
-    category_name character varying(150) NOT NULL,
-    default_team_id integer,
-    created_by uuid,
-    updated_by uuid,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+CREATE TABLE technician_profiles (
+    user_id UUID PRIMARY KEY,
+
+    max_active_tickets INTEGER NOT NULL DEFAULT 5
+        CHECK (max_active_tickets > 0),
+
+    skills TEXT NULL,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT fk_technician_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(user_id)
+        ON DELETE CASCADE
 );
 
+-- =========================================================
+-- ASSIGNMENTS
+-- =========================================================
 
---
--- Name: category_category_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
+CREATE TABLE assignments (
+    assignment_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-ALTER TABLE public.category ALTER COLUMN category_id ADD GENERATED ALWAYS AS IDENTITY (
-    SEQUENCE NAME public.category_category_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
+    ticket_id UUID NOT NULL,
+
+    assigned_to UUID NULL,
+    assigned_team_id UUID NULL,
+
+    assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    unassigned_at TIMESTAMPTZ NULL,
+
+    is_current BOOLEAN NOT NULL DEFAULT TRUE,
+
+    assigned_by UUID NULL,
+
+    reason TEXT NULL,
+
+    CONSTRAINT fk_assignment_ticket
+        FOREIGN KEY (ticket_id)
+        REFERENCES tickets(ticket_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_assignment_user
+        FOREIGN KEY (assigned_to)
+        REFERENCES users(user_id),
+
+    CONSTRAINT fk_assignment_team
+        FOREIGN KEY (assigned_team_id)
+        REFERENCES support_teams(support_team_id),
+
+    CONSTRAINT fk_assignment_assigned_by
+        FOREIGN KEY (assigned_by)
+        REFERENCES users(user_id),
+
+    CONSTRAINT chk_assignment_target
+        CHECK (
+            assigned_to IS NOT NULL
+            OR
+            assigned_team_id IS NOT NULL
+        ),
+
+    CONSTRAINT chk_assignment_currency
+        CHECK (
+            (is_current = TRUE AND unassigned_at IS NULL)
+            OR
+            (is_current = FALSE AND unassigned_at IS NOT NULL)
+        )
 );
 
+CREATE UNIQUE INDEX uq_current_ticket_assignment
+ON assignments(ticket_id)
+WHERE is_current = TRUE;
 
---
--- Name: comment; Type: TABLE; Schema: public; Owner: -
---
+-- =========================================================
+-- STATUS HISTORIES
+-- =========================================================
 
-CREATE TABLE public.comment (
-    comment_id uuid DEFAULT gen_random_uuid() NOT NULL,
-    ticket_id uuid NOT NULL,
-    author_id uuid NOT NULL,
-    content text NOT NULL,
-    is_internal boolean DEFAULT false NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+CREATE TABLE status_histories (
+    status_history_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    ticket_id UUID NOT NULL,
+
+    old_status VARCHAR(40) NULL,
+    new_status VARCHAR(40) NOT NULL,
+
+    changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    changed_by UUID NOT NULL,
+
+    reason TEXT NULL,
+
+    CONSTRAINT fk_status_ticket
+        FOREIGN KEY (ticket_id)
+        REFERENCES tickets(ticket_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_status_user
+        FOREIGN KEY (changed_by)
+        REFERENCES users(user_id),
+
+    CONSTRAINT chk_status_transition
+        CHECK (
+            old_status IS NULL
+            OR
+            old_status <> new_status
+        )
 );
 
+-- =========================================================
+-- TICKET EVENTS
+-- =========================================================
 
---
--- Name: escalation; Type: TABLE; Schema: public; Owner: -
---
+CREATE TABLE ticket_events (
+    ticket_event_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-CREATE TABLE public.escalation (
-    escalation_id uuid DEFAULT gen_random_uuid() NOT NULL,
-    ticket_id uuid NOT NULL,
-    from_team_id integer,
-    to_team_id integer NOT NULL,
-    escalated_by uuid NOT NULL,
-    escalation_type character varying(100) NOT NULL,
-    reason text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    resolved_at timestamp with time zone
+    ticket_id UUID NOT NULL,
+
+    event_type VARCHAR(100) NOT NULL,
+
+    actor_user_id UUID NULL,
+
+    event_data JSONB NULL,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT fk_ticket_event_ticket
+        FOREIGN KEY (ticket_id)
+        REFERENCES tickets(ticket_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_ticket_event_actor
+        FOREIGN KEY (actor_user_id)
+        REFERENCES users(user_id)
 );
 
+-- =========================================================
+-- COMMENTS
+-- =========================================================
 
---
--- Name: feedback; Type: TABLE; Schema: public; Owner: -
---
+CREATE TABLE comments (
+    comment_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-CREATE TABLE public.feedback (
-    feedback_id uuid DEFAULT gen_random_uuid() NOT NULL,
-    ticket_id uuid NOT NULL,
-    user_id uuid NOT NULL,
-    rating smallint NOT NULL,
-    confirmation_status character varying(50) NOT NULL,
-    reopened_reason text,
-    comment text,
-    submitted_at timestamp with time zone DEFAULT now() NOT NULL
+    ticket_id UUID NOT NULL,
+    user_id UUID NOT NULL,
+
+    body TEXT NOT NULL,
+
+    is_internal BOOLEAN NOT NULL DEFAULT FALSE,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT fk_comment_ticket
+        FOREIGN KEY (ticket_id)
+        REFERENCES tickets(ticket_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_comment_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(user_id)
 );
 
+-- =========================================================
+-- ATTACHMENTS
+-- =========================================================
 
---
--- Name: location; Type: TABLE; Schema: public; Owner: -
---
+CREATE TABLE attachments (
+    attachment_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-CREATE TABLE public.location (
-    location_id integer NOT NULL,
-    building character varying(150) NOT NULL,
-    floor character varying(50),
-    room_code character varying(100) NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    ticket_id UUID NOT NULL,
+    uploaded_by UUID NOT NULL,
+
+    file_uuid UUID NOT NULL UNIQUE,
+
+    file_name VARCHAR(255) NOT NULL,
+    mime_type VARCHAR(100) NULL,
+
+    file_size BIGINT NOT NULL
+        CHECK (file_size >= 0),
+
+    storage_path TEXT NOT NULL,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT fk_attachment_ticket
+        FOREIGN KEY (ticket_id)
+        REFERENCES tickets(ticket_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_attachment_user
+        FOREIGN KEY (uploaded_by)
+        REFERENCES users(user_id)
 );
 
+-- =========================================================
+-- WORK LOGS
+-- =========================================================
 
---
--- Name: location_location_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
+CREATE TABLE work_logs (
+    work_log_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-ALTER TABLE public.location ALTER COLUMN location_id ADD GENERATED ALWAYS AS IDENTITY (
-    SEQUENCE NAME public.location_location_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
+    ticket_id UUID NOT NULL,
+    user_id UUID NOT NULL,
+
+    started_at TIMESTAMPTZ NULL,
+    ended_at TIMESTAMPTZ NULL,
+
+    time_spent_minutes INTEGER NOT NULL
+        CHECK (time_spent_minutes >= 0),
+
+    note TEXT NULL,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT fk_worklog_ticket
+        FOREIGN KEY (ticket_id)
+        REFERENCES tickets(ticket_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_worklog_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(user_id)
 );
 
+-- =========================================================
+-- FEEDBACK
+-- =========================================================
 
---
--- Name: prediction; Type: TABLE; Schema: public; Owner: -
---
+CREATE TABLE feedback (
+    feedback_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-CREATE TABLE public.prediction (
-    prediction_id uuid DEFAULT gen_random_uuid() NOT NULL,
-    ticket_id uuid NOT NULL,
-    prediction_type character varying(100) NOT NULL,
-    predicted_value character varying(255) NOT NULL,
-    confidence numeric,
-    explanation text,
-    model_version_id integer NOT NULL,
-    decision character varying(100),
-    decided_by uuid,
-    decided_at timestamp with time zone,
-    override_reason text,
-    actual_outcome character varying(255),
-    evaluated_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    ticket_id UUID NOT NULL,
+    user_id UUID NOT NULL,
+
+    rating INTEGER NULL
+        CHECK (rating BETWEEN 1 AND 5),
+
+    comment TEXT NULL,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT fk_feedback_ticket
+        FOREIGN KEY (ticket_id)
+        REFERENCES tickets(ticket_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_feedback_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(user_id),
+
+    CONSTRAINT uq_feedback_ticket_user
+        UNIQUE (ticket_id, user_id)
 );
 
+-- =========================================================
+-- ESCALATIONS
+-- =========================================================
 
---
--- Name: priority_matrix; Type: TABLE; Schema: public; Owner: -
---
+CREATE TABLE escalations (
+    escalation_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-CREATE TABLE public.priority_matrix (
-    priority_matrix_id integer NOT NULL,
-    urgency character varying(50) NOT NULL,
-    impact character varying(50) NOT NULL,
-    priority character varying(50) NOT NULL,
-    is_active boolean DEFAULT true NOT NULL,
-    created_by uuid,
-    updated_by uuid,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    ticket_id UUID NOT NULL,
+
+    trigger_type VARCHAR(50) NOT NULL,
+    severity VARCHAR(30) NOT NULL,
+
+    triggered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    assigned_to UUID NULL,
+    assigned_team_id UUID NULL,
+
+    reason TEXT NULL,
+
+    resolved_at TIMESTAMPTZ NULL,
+
+    CONSTRAINT fk_escalation_ticket
+        FOREIGN KEY (ticket_id)
+        REFERENCES tickets(ticket_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_escalation_user
+        FOREIGN KEY (assigned_to)
+        REFERENCES users(user_id),
+
+    CONSTRAINT fk_escalation_team
+        FOREIGN KEY (assigned_team_id)
+        REFERENCES support_teams(support_team_id),
+
+    CONSTRAINT chk_escalation_target
+        CHECK (
+            assigned_to IS NOT NULL
+            OR
+            assigned_team_id IS NOT NULL
+        )
 );
 
+-- =========================================================
+-- AI MODEL VERSIONS
+-- =========================================================
 
---
--- Name: priority_matrix_priority_matrix_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
+CREATE TABLE ai_model_versions (
+    model_version_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-ALTER TABLE public.priority_matrix ALTER COLUMN priority_matrix_id ADD GENERATED ALWAYS AS IDENTITY (
-    SEQUENCE NAME public.priority_matrix_priority_matrix_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
+    model_name VARCHAR(150) NOT NULL,
+    version VARCHAR(50) NOT NULL,
+
+    model_type VARCHAR(100) NOT NULL,
+
+    training_dataset_version VARCHAR(100) NULL,
+    feature_schema_version VARCHAR(100) NULL,
+
+    trained_at TIMESTAMPTZ NULL,
+    deployed_at TIMESTAMPTZ NULL,
+
+    metrics JSONB NULL,
+
+    is_active BOOLEAN NOT NULL DEFAULT FALSE,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    UNIQUE (model_name, version)
 );
 
+-- =========================================================
+-- PREDICTIONS
+-- =========================================================
 
---
--- Name: role; Type: TABLE; Schema: public; Owner: -
---
+CREATE TABLE predictions (
+    prediction_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-CREATE TABLE public.role (
-    role_id integer NOT NULL,
-    role_name character varying(100) NOT NULL
+    ticket_id UUID NOT NULL,
+    model_version_id UUID NOT NULL,
+
+    prediction_type VARCHAR(50) NOT NULL,
+    predicted_value VARCHAR(100) NOT NULL,
+
+    confidence NUMERIC(5,4) NULL
+        CHECK (confidence BETWEEN 0 AND 1),
+
+    prediction_timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    decision VARCHAR(30) NOT NULL DEFAULT 'PENDING',
+
+    override_value VARCHAR(100) NULL,
+
+    reviewed_by UUID NULL,
+    reviewed_at TIMESTAMPTZ NULL,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT fk_prediction_ticket
+        FOREIGN KEY (ticket_id)
+        REFERENCES tickets(ticket_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_prediction_model
+        FOREIGN KEY (model_version_id)
+        REFERENCES ai_model_versions(model_version_id),
+
+    CONSTRAINT fk_prediction_reviewer
+        FOREIGN KEY (reviewed_by)
+        REFERENCES users(user_id),
+
+    CONSTRAINT chk_prediction_review
+        CHECK (
+            (
+                decision = 'PENDING'
+                AND reviewed_by IS NULL
+            )
+            OR
+            (
+                decision IN ('ACCEPTED', 'OVERRIDDEN')
+                AND reviewed_by IS NOT NULL
+            )
+        )
 );
 
+-- =========================================================
+-- TICKET RELATIONS
+-- =========================================================
 
---
--- Name: role_role_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
+CREATE TABLE ticket_relations (
+    ticket_relation_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-ALTER TABLE public.role ALTER COLUMN role_id ADD GENERATED ALWAYS AS IDENTITY (
-    SEQUENCE NAME public.role_role_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
+    ticket_id UUID NOT NULL,
+    related_ticket_id UUID NOT NULL,
+
+    relation_type VARCHAR(50) NOT NULL,
+
+    created_by UUID NOT NULL,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT fk_relation_ticket
+        FOREIGN KEY (ticket_id)
+        REFERENCES tickets(ticket_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_relation_related_ticket
+        FOREIGN KEY (related_ticket_id)
+        REFERENCES tickets(ticket_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_relation_user
+        FOREIGN KEY (created_by)
+        REFERENCES users(user_id),
+
+    CONSTRAINT chk_relation_not_self
+        CHECK (ticket_id <> related_ticket_id),
+
+    CONSTRAINT uq_ticket_relation
+        UNIQUE (
+            ticket_id,
+            related_ticket_id,
+            relation_type
+        )
 );
 
+-- =========================================================
+-- NOTIFICATIONS
+-- =========================================================
 
---
--- Name: sla_profile; Type: TABLE; Schema: public; Owner: -
---
+CREATE TABLE notifications (
+    notification_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-CREATE TABLE public.sla_profile (
-    sla_profile_id integer NOT NULL,
-    profile_name character varying(150) NOT NULL,
-    priority character varying(50) NOT NULL,
-    response_target_minutes integer NOT NULL,
-    resolution_target_minutes integer NOT NULL,
-    business_hours_id integer NOT NULL,
-    is_active boolean DEFAULT true NOT NULL,
-    created_by uuid,
-    updated_by uuid,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    recipient_user_id UUID NOT NULL,
+
+    ticket_id UUID NULL,
+    related_user_id UUID NULL,
+
+    notification_type VARCHAR(100) NOT NULL,
+
+    title VARCHAR(255) NOT NULL,
+    body TEXT NOT NULL,
+
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    read_at TIMESTAMPTZ NULL,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT fk_notification_recipient
+        FOREIGN KEY (recipient_user_id)
+        REFERENCES users(user_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_notification_ticket
+        FOREIGN KEY (ticket_id)
+        REFERENCES tickets(ticket_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_notification_related_user
+        FOREIGN KEY (related_user_id)
+        REFERENCES users(user_id),
+
+    CONSTRAINT chk_notification_read
+        CHECK (
+            (is_read = TRUE AND read_at IS NOT NULL)
+            OR
+            is_read = FALSE
+        )
 );
 
+-- =========================================================
+-- AUDIT LOGS
+-- =========================================================
 
---
--- Name: sla_profile_sla_profile_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
+CREATE TABLE audit_logs (
+    audit_log_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-ALTER TABLE public.sla_profile ALTER COLUMN sla_profile_id ADD GENERATED ALWAYS AS IDENTITY (
-    SEQUENCE NAME public.sla_profile_sla_profile_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
+    actor_user_id UUID NULL,
+
+    entity_type VARCHAR(100) NOT NULL,
+    entity_id UUID NOT NULL,
+
+    action VARCHAR(100) NOT NULL,
+
+    old_values JSONB NULL,
+    new_values JSONB NULL,
+
+    ip_address INET NULL,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT fk_audit_actor
+        FOREIGN KEY (actor_user_id)
+        REFERENCES users(user_id)
 );
 
+-- =========================================================
+-- SELF REFERENCES FOR USERS
+-- =========================================================
 
---
--- Name: status_history; Type: TABLE; Schema: public; Owner: -
---
+ALTER TABLE users
+    ADD CONSTRAINT fk_users_approved_by
+    FOREIGN KEY (approved_by)
+    REFERENCES users(user_id);
 
-CREATE TABLE public.status_history (
-    history_id uuid DEFAULT gen_random_uuid() NOT NULL,
-    ticket_id uuid NOT NULL,
-    changed_by uuid NOT NULL,
-    old_status character varying(50),
-    new_status character varying(50) NOT NULL,
-    reason text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
-);
+ALTER TABLE users
+    ADD CONSTRAINT fk_users_created_by
+    FOREIGN KEY (created_by)
+    REFERENCES users(user_id);
 
+ALTER TABLE users
+    ADD CONSTRAINT fk_users_updated_by
+    FOREIGN KEY (updated_by)
+    REFERENCES users(user_id);
 
---
--- Name: support_team; Type: TABLE; Schema: public; Owner: -
---
+-- =========================================================
+-- INDEXES
+-- =========================================================
 
-CREATE TABLE public.support_team (
-    team_id integer NOT NULL,
-    team_name character varying(150) NOT NULL,
-    description text,
-    is_active boolean DEFAULT true NOT NULL,
-    created_by uuid,
-    updated_by uuid,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
+CREATE INDEX idx_tickets_reporter
+    ON tickets(reporter_id);
 
+CREATE INDEX idx_tickets_status
+    ON tickets(status);
 
---
--- Name: support_team_team_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
+CREATE INDEX idx_tickets_priority
+    ON tickets(priority);
 
-ALTER TABLE public.support_team ALTER COLUMN team_id ADD GENERATED ALWAYS AS IDENTITY (
-    SEQUENCE NAME public.support_team_team_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
-);
+CREATE INDEX idx_tickets_category
+    ON tickets(category_id);
 
+CREATE INDEX idx_tickets_location
+    ON tickets(location_id);
 
---
--- Name: ticket; Type: TABLE; Schema: public; Owner: -
---
+CREATE INDEX idx_tickets_created_at
+    ON tickets(created_at);
 
-CREATE TABLE public.ticket (
-    ticket_id uuid DEFAULT gen_random_uuid() NOT NULL,
-    reference_number character varying(100) NOT NULL,
-    reporter_id uuid NOT NULL,
-    created_by uuid NOT NULL,
-    updated_by uuid NOT NULL,
-    category_id integer NOT NULL,
-    location_id integer NOT NULL,
-    asset_id character varying(100),
-    priority_matrix_id integer NOT NULL,
-    sla_profile_id integer NOT NULL,
-    title character varying(255) NOT NULL,
-    description text NOT NULL,
-    urgency character varying(50) NOT NULL,
-    impact character varying(50) NOT NULL,
-    priority character varying(50) NOT NULL,
-    status character varying(50) NOT NULL,
-    response_target_minutes integer NOT NULL,
-    resolution_target_minutes integer NOT NULL,
-    first_response_at timestamp with time zone,
-    response_due_at timestamp with time zone,
-    resolution_due_at timestamp with time zone,
-    resolved_at timestamp with time zone,
-    closed_at timestamp with time zone,
-    requester_verified_at timestamp with time zone,
-    requester_verified_by uuid,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT chk_ticket_closed_verification CHECK ((((status)::text <> 'closed'::text) OR ((requester_verified_at IS NOT NULL) AND (requester_verified_by IS NOT NULL))))
-);
+CREATE INDEX idx_assignments_ticket
+    ON assignments(ticket_id);
 
+CREATE INDEX idx_assignments_user
+    ON assignments(assigned_to);
 
---
--- Name: ticket_relation; Type: TABLE; Schema: public; Owner: -
---
+CREATE INDEX idx_assignments_team
+    ON assignments(assigned_team_id);
 
-CREATE TABLE public.ticket_relation (
-    relation_id uuid DEFAULT gen_random_uuid() NOT NULL,
-    source_ticket_id uuid NOT NULL,
-    target_ticket_id uuid NOT NULL,
-    relation_type character varying(100) NOT NULL,
-    created_by uuid NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT chk_ticket_relation_different_tickets CHECK ((source_ticket_id <> target_ticket_id))
-);
+CREATE INDEX idx_status_histories_ticket
+    ON status_histories(ticket_id);
 
+CREATE INDEX idx_ticket_events_ticket
+    ON ticket_events(ticket_id);
 
---
--- Name: work_log; Type: TABLE; Schema: public; Owner: -
---
+CREATE INDEX idx_comments_ticket
+    ON comments(ticket_id);
 
-CREATE TABLE public.work_log (
-    work_log_id uuid DEFAULT gen_random_uuid() NOT NULL,
-    ticket_id uuid NOT NULL,
-    technician_id uuid NOT NULL,
-    diagnosis text,
-    actions_taken text,
-    parts_used text,
-    time_spent_minutes integer,
-    resolution_code character varying(100),
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
+CREATE INDEX idx_attachments_ticket
+    ON attachments(ticket_id);
 
+CREATE INDEX idx_notifications_recipient
+    ON notifications(recipient_user_id);
 
---
--- Name: ai_model_version ai_model_version_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
+CREATE INDEX idx_notifications_unread
+    ON notifications(recipient_user_id, is_read);
 
-ALTER TABLE ONLY public.ai_model_version
-    ADD CONSTRAINT ai_model_version_pkey PRIMARY KEY (model_version_id);
+CREATE INDEX idx_predictions_ticket
+    ON predictions(ticket_id);
 
+CREATE INDEX idx_audit_logs_entity
+    ON audit_logs(entity_type, entity_id);
 
---
--- Name: app_user app_user_email_key; Type: CONSTRAINT; Schema: public; Owner: -
---
+COMMIT;
 
-ALTER TABLE ONLY public.app_user
-    ADD CONSTRAINT app_user_email_key UNIQUE (email);
-
-
---
--- Name: app_user app_user_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.app_user
-    ADD CONSTRAINT app_user_pkey PRIMARY KEY (user_id);
-
-
---
--- Name: asset_reference asset_reference_asset_tag_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.asset_reference
-    ADD CONSTRAINT asset_reference_asset_tag_key UNIQUE (asset_tag);
-
-
---
--- Name: asset_reference asset_reference_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.asset_reference
-    ADD CONSTRAINT asset_reference_pkey PRIMARY KEY (asset_id);
-
-
---
--- Name: assignment assignment_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.assignment
-    ADD CONSTRAINT assignment_pkey PRIMARY KEY (assignment_id);
-
-
---
--- Name: attachment attachment_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.attachment
-    ADD CONSTRAINT attachment_pkey PRIMARY KEY (attachment_id);
-
-
---
--- Name: audit_log audit_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.audit_log
-    ADD CONSTRAINT audit_log_pkey PRIMARY KEY (log_id);
-
-
---
--- Name: business_hours business_hours_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.business_hours
-    ADD CONSTRAINT business_hours_pkey PRIMARY KEY (business_hours_id);
-
-
---
--- Name: business_hours_schedule business_hours_schedule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.business_hours_schedule
-    ADD CONSTRAINT business_hours_schedule_pkey PRIMARY KEY (schedule_id);
-
-
---
--- Name: category category_category_name_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.category
-    ADD CONSTRAINT category_category_name_key UNIQUE (category_name);
-
-
---
--- Name: category category_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.category
-    ADD CONSTRAINT category_pkey PRIMARY KEY (category_id);
-
-
---
--- Name: comment comment_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.comment
-    ADD CONSTRAINT comment_pkey PRIMARY KEY (comment_id);
-
-
---
--- Name: escalation escalation_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.escalation
-    ADD CONSTRAINT escalation_pkey PRIMARY KEY (escalation_id);
-
-
---
--- Name: feedback feedback_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.feedback
-    ADD CONSTRAINT feedback_pkey PRIMARY KEY (feedback_id);
-
-
---
--- Name: feedback feedback_ticket_id_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.feedback
-    ADD CONSTRAINT feedback_ticket_id_key UNIQUE (ticket_id);
-
-
---
--- Name: location location_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.location
-    ADD CONSTRAINT location_pkey PRIMARY KEY (location_id);
-
-
---
--- Name: prediction prediction_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.prediction
-    ADD CONSTRAINT prediction_pkey PRIMARY KEY (prediction_id);
-
-
---
--- Name: priority_matrix priority_matrix_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.priority_matrix
-    ADD CONSTRAINT priority_matrix_pkey PRIMARY KEY (priority_matrix_id);
-
-
---
--- Name: role role_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.role
-    ADD CONSTRAINT role_pkey PRIMARY KEY (role_id);
-
-
---
--- Name: role role_role_name_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.role
-    ADD CONSTRAINT role_role_name_key UNIQUE (role_name);
-
-
---
--- Name: sla_profile sla_profile_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.sla_profile
-    ADD CONSTRAINT sla_profile_pkey PRIMARY KEY (sla_profile_id);
-
-
---
--- Name: status_history status_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.status_history
-    ADD CONSTRAINT status_history_pkey PRIMARY KEY (history_id);
-
-
---
--- Name: support_team support_team_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.support_team
-    ADD CONSTRAINT support_team_pkey PRIMARY KEY (team_id);
-
-
---
--- Name: support_team support_team_team_name_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.support_team
-    ADD CONSTRAINT support_team_team_name_key UNIQUE (team_name);
-
-
---
--- Name: ticket ticket_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.ticket
-    ADD CONSTRAINT ticket_pkey PRIMARY KEY (ticket_id);
-
-
---
--- Name: ticket ticket_reference_number_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.ticket
-    ADD CONSTRAINT ticket_reference_number_key UNIQUE (reference_number);
-
-
---
--- Name: ticket_relation ticket_relation_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.ticket_relation
-    ADD CONSTRAINT ticket_relation_pkey PRIMARY KEY (relation_id);
-
-
---
--- Name: ticket_relation uq_ticket_relation_target_type; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.ticket_relation
-    ADD CONSTRAINT uq_ticket_relation_target_type UNIQUE (target_ticket_id, relation_type);
-
-
---
--- Name: work_log work_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.work_log
-    ADD CONSTRAINT work_log_pkey PRIMARY KEY (work_log_id);
-
-
---
--- Name: uq_priority_matrix_active; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX uq_priority_matrix_active ON public.priority_matrix USING btree (urgency, impact) WHERE (is_active = true);
-
-
---
--- Name: asset_reference fk_asset_location; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.asset_reference
-    ADD CONSTRAINT fk_asset_location FOREIGN KEY (location_id) REFERENCES public.location(location_id);
-
-
---
--- Name: assignment fk_assignment_assigned_by; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.assignment
-    ADD CONSTRAINT fk_assignment_assigned_by FOREIGN KEY (assigned_by) REFERENCES public.app_user(user_id);
-
-
---
--- Name: assignment fk_assignment_assignee; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.assignment
-    ADD CONSTRAINT fk_assignment_assignee FOREIGN KEY (assignee_id) REFERENCES public.app_user(user_id);
-
-
---
--- Name: assignment fk_assignment_team; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.assignment
-    ADD CONSTRAINT fk_assignment_team FOREIGN KEY (team_id) REFERENCES public.support_team(team_id);
-
-
---
--- Name: assignment fk_assignment_ticket; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.assignment
-    ADD CONSTRAINT fk_assignment_ticket FOREIGN KEY (ticket_id) REFERENCES public.ticket(ticket_id);
-
-
---
--- Name: attachment fk_attachment_comment; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.attachment
-    ADD CONSTRAINT fk_attachment_comment FOREIGN KEY (comment_id) REFERENCES public.comment(comment_id);
-
-
---
--- Name: attachment fk_attachment_ticket; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.attachment
-    ADD CONSTRAINT fk_attachment_ticket FOREIGN KEY (ticket_id) REFERENCES public.ticket(ticket_id);
-
-
---
--- Name: attachment fk_attachment_uploaded_by; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.attachment
-    ADD CONSTRAINT fk_attachment_uploaded_by FOREIGN KEY (uploaded_by) REFERENCES public.app_user(user_id);
-
-
---
--- Name: audit_log fk_audit_log_actor; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.audit_log
-    ADD CONSTRAINT fk_audit_log_actor FOREIGN KEY (actor_id) REFERENCES public.app_user(user_id);
-
-
---
--- Name: business_hours fk_business_hours_created_by; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.business_hours
-    ADD CONSTRAINT fk_business_hours_created_by FOREIGN KEY (created_by) REFERENCES public.app_user(user_id);
-
-
---
--- Name: business_hours fk_business_hours_updated_by; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.business_hours
-    ADD CONSTRAINT fk_business_hours_updated_by FOREIGN KEY (updated_by) REFERENCES public.app_user(user_id);
-
-
---
--- Name: category fk_category_created_by; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.category
-    ADD CONSTRAINT fk_category_created_by FOREIGN KEY (created_by) REFERENCES public.app_user(user_id);
-
-
---
--- Name: category fk_category_default_team; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.category
-    ADD CONSTRAINT fk_category_default_team FOREIGN KEY (default_team_id) REFERENCES public.support_team(team_id);
-
-
---
--- Name: category fk_category_updated_by; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.category
-    ADD CONSTRAINT fk_category_updated_by FOREIGN KEY (updated_by) REFERENCES public.app_user(user_id);
-
-
---
--- Name: comment fk_comment_author; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.comment
-    ADD CONSTRAINT fk_comment_author FOREIGN KEY (author_id) REFERENCES public.app_user(user_id);
-
-
---
--- Name: comment fk_comment_ticket; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.comment
-    ADD CONSTRAINT fk_comment_ticket FOREIGN KEY (ticket_id) REFERENCES public.ticket(ticket_id);
-
-
---
--- Name: escalation fk_escalation_escalated_by; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.escalation
-    ADD CONSTRAINT fk_escalation_escalated_by FOREIGN KEY (escalated_by) REFERENCES public.app_user(user_id);
-
-
---
--- Name: escalation fk_escalation_from_team; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.escalation
-    ADD CONSTRAINT fk_escalation_from_team FOREIGN KEY (from_team_id) REFERENCES public.support_team(team_id);
-
-
---
--- Name: escalation fk_escalation_ticket; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.escalation
-    ADD CONSTRAINT fk_escalation_ticket FOREIGN KEY (ticket_id) REFERENCES public.ticket(ticket_id);
-
-
---
--- Name: escalation fk_escalation_to_team; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.escalation
-    ADD CONSTRAINT fk_escalation_to_team FOREIGN KEY (to_team_id) REFERENCES public.support_team(team_id);
-
-
---
--- Name: feedback fk_feedback_ticket; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.feedback
-    ADD CONSTRAINT fk_feedback_ticket FOREIGN KEY (ticket_id) REFERENCES public.ticket(ticket_id);
-
-
---
--- Name: feedback fk_feedback_user; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.feedback
-    ADD CONSTRAINT fk_feedback_user FOREIGN KEY (user_id) REFERENCES public.app_user(user_id);
-
-
---
--- Name: prediction fk_prediction_decided_by; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.prediction
-    ADD CONSTRAINT fk_prediction_decided_by FOREIGN KEY (decided_by) REFERENCES public.app_user(user_id);
-
-
---
--- Name: prediction fk_prediction_model_version; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.prediction
-    ADD CONSTRAINT fk_prediction_model_version FOREIGN KEY (model_version_id) REFERENCES public.ai_model_version(model_version_id);
-
-
---
--- Name: prediction fk_prediction_ticket; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.prediction
-    ADD CONSTRAINT fk_prediction_ticket FOREIGN KEY (ticket_id) REFERENCES public.ticket(ticket_id);
-
-
---
--- Name: priority_matrix fk_priority_matrix_created_by; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.priority_matrix
-    ADD CONSTRAINT fk_priority_matrix_created_by FOREIGN KEY (created_by) REFERENCES public.app_user(user_id);
-
-
---
--- Name: priority_matrix fk_priority_matrix_updated_by; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.priority_matrix
-    ADD CONSTRAINT fk_priority_matrix_updated_by FOREIGN KEY (updated_by) REFERENCES public.app_user(user_id);
-
-
---
--- Name: business_hours_schedule fk_schedule_business_hours; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.business_hours_schedule
-    ADD CONSTRAINT fk_schedule_business_hours FOREIGN KEY (business_hours_id) REFERENCES public.business_hours(business_hours_id);
-
-
---
--- Name: business_hours_schedule fk_schedule_created_by; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.business_hours_schedule
-    ADD CONSTRAINT fk_schedule_created_by FOREIGN KEY (created_by) REFERENCES public.app_user(user_id);
-
-
---
--- Name: business_hours_schedule fk_schedule_updated_by; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.business_hours_schedule
-    ADD CONSTRAINT fk_schedule_updated_by FOREIGN KEY (updated_by) REFERENCES public.app_user(user_id);
-
-
---
--- Name: sla_profile fk_sla_profile_business_hours; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.sla_profile
-    ADD CONSTRAINT fk_sla_profile_business_hours FOREIGN KEY (business_hours_id) REFERENCES public.business_hours(business_hours_id);
-
-
---
--- Name: sla_profile fk_sla_profile_created_by; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.sla_profile
-    ADD CONSTRAINT fk_sla_profile_created_by FOREIGN KEY (created_by) REFERENCES public.app_user(user_id);
-
-
---
--- Name: sla_profile fk_sla_profile_updated_by; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.sla_profile
-    ADD CONSTRAINT fk_sla_profile_updated_by FOREIGN KEY (updated_by) REFERENCES public.app_user(user_id);
-
-
---
--- Name: status_history fk_status_history_changed_by; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.status_history
-    ADD CONSTRAINT fk_status_history_changed_by FOREIGN KEY (changed_by) REFERENCES public.app_user(user_id);
-
-
---
--- Name: status_history fk_status_history_ticket; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.status_history
-    ADD CONSTRAINT fk_status_history_ticket FOREIGN KEY (ticket_id) REFERENCES public.ticket(ticket_id);
-
-
---
--- Name: support_team fk_support_team_created_by; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.support_team
-    ADD CONSTRAINT fk_support_team_created_by FOREIGN KEY (created_by) REFERENCES public.app_user(user_id);
-
-
---
--- Name: support_team fk_support_team_updated_by; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.support_team
-    ADD CONSTRAINT fk_support_team_updated_by FOREIGN KEY (updated_by) REFERENCES public.app_user(user_id);
-
-
---
--- Name: ticket fk_ticket_asset; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.ticket
-    ADD CONSTRAINT fk_ticket_asset FOREIGN KEY (asset_id) REFERENCES public.asset_reference(asset_id);
-
-
---
--- Name: ticket fk_ticket_category; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.ticket
-    ADD CONSTRAINT fk_ticket_category FOREIGN KEY (category_id) REFERENCES public.category(category_id);
-
-
---
--- Name: ticket fk_ticket_created_by; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.ticket
-    ADD CONSTRAINT fk_ticket_created_by FOREIGN KEY (created_by) REFERENCES public.app_user(user_id);
-
-
---
--- Name: ticket fk_ticket_location; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.ticket
-    ADD CONSTRAINT fk_ticket_location FOREIGN KEY (location_id) REFERENCES public.location(location_id);
-
-
---
--- Name: ticket fk_ticket_priority_matrix; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.ticket
-    ADD CONSTRAINT fk_ticket_priority_matrix FOREIGN KEY (priority_matrix_id) REFERENCES public.priority_matrix(priority_matrix_id);
-
-
---
--- Name: ticket_relation fk_ticket_relation_created_by; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.ticket_relation
-    ADD CONSTRAINT fk_ticket_relation_created_by FOREIGN KEY (created_by) REFERENCES public.app_user(user_id);
-
-
---
--- Name: ticket_relation fk_ticket_relation_source; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.ticket_relation
-    ADD CONSTRAINT fk_ticket_relation_source FOREIGN KEY (source_ticket_id) REFERENCES public.ticket(ticket_id);
-
-
---
--- Name: ticket_relation fk_ticket_relation_target; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.ticket_relation
-    ADD CONSTRAINT fk_ticket_relation_target FOREIGN KEY (target_ticket_id) REFERENCES public.ticket(ticket_id);
-
-
---
--- Name: ticket fk_ticket_reporter; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.ticket
-    ADD CONSTRAINT fk_ticket_reporter FOREIGN KEY (reporter_id) REFERENCES public.app_user(user_id);
-
-
---
--- Name: ticket fk_ticket_requester_verified_by; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.ticket
-    ADD CONSTRAINT fk_ticket_requester_verified_by FOREIGN KEY (requester_verified_by) REFERENCES public.app_user(user_id);
-
-
---
--- Name: ticket fk_ticket_sla_profile; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.ticket
-    ADD CONSTRAINT fk_ticket_sla_profile FOREIGN KEY (sla_profile_id) REFERENCES public.sla_profile(sla_profile_id);
-
-
---
--- Name: ticket fk_ticket_updated_by; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.ticket
-    ADD CONSTRAINT fk_ticket_updated_by FOREIGN KEY (updated_by) REFERENCES public.app_user(user_id);
-
-
---
--- Name: app_user fk_user_role; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.app_user
-    ADD CONSTRAINT fk_user_role FOREIGN KEY (role_id) REFERENCES public.role(role_id);
-
-
---
--- Name: work_log fk_work_log_technician; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.work_log
-    ADD CONSTRAINT fk_work_log_technician FOREIGN KEY (technician_id) REFERENCES public.app_user(user_id);
-
-
---
--- Name: work_log fk_work_log_ticket; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.work_log
-    ADD CONSTRAINT fk_work_log_ticket FOREIGN KEY (ticket_id) REFERENCES public.ticket(ticket_id);
-
-
---
--- PostgreSQL database dump complete
---
-
-\unrestrict hM5YnCAYhX4sABrP4cUQRFh6jbAjJT1pwMLD8kTKZVQNbrchYDmJykY3ZhqcQYY
+-- =========================================================
+-- END OF SCHEMA
+-- =========================================================

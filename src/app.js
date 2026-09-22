@@ -62,7 +62,7 @@ app.use("/api/auth", authRoutes);
 app.get(
   "/api/protected",
   authenticate,
-  authorize("admin"),
+  authorize("MANAGER"),
   (req, res) => {
     res.json({
       success: true,
