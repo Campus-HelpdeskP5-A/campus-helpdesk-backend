@@ -14,13 +14,12 @@ const options = {
         "AI-assisted ticket classification, notifications, feedback, and auditing.",
     },
 
-    servers: [
-      {
-        url: "http://localhost:5000",
-        description: "Local development server",
-      },
-    ],
-
+ servers: [
+  {
+    url: process.env.API_BASE_URL || "http://localhost:5000",
+    description: "Campus Helpdesk API",
+  },
+],
     tags: [
       {
         name: "Authentication",
