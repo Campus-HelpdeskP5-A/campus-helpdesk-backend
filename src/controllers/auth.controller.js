@@ -124,6 +124,8 @@ const login = async (req, res) => {
       });
     }
 
+    const normalizedEmail = email.trim().toLowerCase();
+
     const result = await pool.query(
       `
       SELECT
@@ -134,9 +136,9 @@ const login = async (req, res) => {
         role,
         is_active
       FROM users
-      WHERE email = $1
+      WHERE LOWER(email) = LOWER($1)
       `,
-      [email]
+      [normalizedEmail]
     );
 
     if (result.rows.length === 0) {
@@ -204,7 +206,53 @@ const login = async (req, res) => {
   }
 };
 
+const getMe = async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT
+        user_id,
+        email,
+        full_name,
+        role,
+        is_active,
+        approved_by,
+        approved_at,
+        created_by,
+        updated_by,
+        created_at,
+        updated_at
+      FROM users
+      WHERE user_id = $1
+      `,
+      [req.user.user_id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        user: result.rows[0],
+      },
+    });
+  } catch (error) {
+    console.error("Get current user error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to get current user",
+    });
+  }
+};
+
 module.exports = {
   register,
   login,
+  getMe,
 };
