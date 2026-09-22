@@ -1,9 +1,11 @@
-
 const express = require("express");
 
 const {
   getUsers,
+  getUserById,
   createUser,
+  updateUser,
+  updateUserStatus,
 } = require("../controllers/user.controller");
 
 const authenticate = require("../middlewares/auth.middleware");
@@ -16,7 +18,6 @@ const router = express.Router();
  * /api/users:
  *   get:
  *     summary: Get all users
- *     description: Retrieve all users. Admin access required.
  *     tags:
  *       - Users
  *     security:
@@ -25,17 +26,52 @@ const router = express.Router();
  *       200:
  *         description: Users retrieved successfully
  *       401:
- *         description: Authentication required or token is invalid
+ *         description: Authentication required
  *       403:
- *         description: User does not have admin permission
+ *         description: Insufficient permissions
  *       500:
- *         description: Failed to retrieve users
+ *         description: Server error
  */
 router.get(
   "/",
   authenticate,
-  authorize("admin"),
+  authorize("MANAGER", "AUDITOR"),
   getUsers
+);
+
+/**
+ * @swagger
+ * /api/users/{id}:
+ *   get:
+ *     summary: Get user by ID
+ *     tags:
+ *       - Users
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: User retrieved successfully
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Insufficient permissions
+ *       404:
+ *         description: User not found
+ *       500:
+ *         description: Server error
+ */
+router.get(
+  "/:id",
+  authenticate,
+  authorize("MANAGER", "AUDITOR"),
+  getUserById
 );
 
 /**
@@ -43,7 +79,6 @@ router.get(
  * /api/users:
  *   post:
  *     summary: Create a new user
- *     description: Create a new user. Admin access required.
  *     tags:
  *       - Users
  *     security:
@@ -58,42 +93,156 @@ router.get(
  *               - email
  *               - password
  *               - full_name
- *               - role_id
+ *               - role
  *             properties:
  *               email:
  *                 type: string
  *                 format: email
- *                 example: new.user@bua.edu.eg
+ *                 example: newuser@bua.edu.eg
  *               password:
  *                 type: string
  *                 format: password
- *                 example: Test123!
+ *                 example: Dev12345!
  *               full_name:
  *                 type: string
  *                 example: New User
- *               role_id:
- *                 type: integer
- *                 example: 4
+ *               role:
+ *                 type: string
+ *                 enum:
+ *                   - REPORTER
+ *                   - AGENT
+ *                   - TECHNICIAN
+ *                   - MANAGER
+ *                   - AUDITOR
  *     responses:
  *       201:
  *         description: User created successfully
  *       400:
- *         description: Required fields are missing
+ *         description: Invalid user data
  *       401:
- *         description: Authentication required or token is invalid
+ *         description: Authentication required
  *       403:
- *         description: User does not have admin permission
+ *         description: Insufficient permissions
  *       409:
- *         description: Email already exists
+ *         description: User already exists
  *       500:
- *         description: Failed to create user
+ *         description: Server error
  */
 router.post(
   "/",
   authenticate,
-  authorize("admin"),
+  authorize("MANAGER"),
   createUser
 );
 
-module.exports = router;
+/**
+ * @swagger
+ * /api/users/{id}:
+ *   put:
+ *     summary: Update user
+ *     tags:
+ *       - Users
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *               full_name:
+ *                 type: string
+ *               role:
+ *                 type: string
+ *                 enum:
+ *                   - REPORTER
+ *                   - AGENT
+ *                   - TECHNICIAN
+ *                   - MANAGER
+ *                   - AUDITOR
+ *               is_active:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: User updated successfully
+ *       400:
+ *         description: Invalid user data
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Insufficient permissions
+ *       404:
+ *         description: User not found
+ *       409:
+ *         description: Email already exists
+ *       500:
+ *         description: Server error
+ */
+router.put(
+  "/:id",
+  authenticate,
+  authorize("MANAGER"),
+  updateUser
+);
 
+/**
+ * @swagger
+ * /api/users/{id}/status:
+ *   patch:
+ *     summary: Activate or deactivate a user
+ *     tags:
+ *       - Users
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - is_active
+ *             properties:
+ *               is_active:
+ *                 type: boolean
+ *                 example: false
+ *     responses:
+ *       200:
+ *         description: User status updated successfully
+ *       400:
+ *         description: is_active must be a boolean
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Insufficient permissions
+ *       404:
+ *         description: User not found
+ *       500:
+ *         description: Server error
+ */
+router.patch(
+  "/:id/status",
+  authenticate,
+  authorize("MANAGER"),
+  updateUserStatus
+);
+
+module.exports = router;

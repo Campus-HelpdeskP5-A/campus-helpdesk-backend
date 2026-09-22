@@ -4,34 +4,79 @@ const getCategories = async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT
-        c.category_id,
-        c.category_name,
-        c.default_team_id,
-        c.created_by,
-        c.updated_by,
-        c.created_at,
-        c.updated_at
-      FROM category c
-      ORDER BY c.category_id ASC
+        category_id,
+        category_name,
+        description,
+        default_team_id,
+        is_active,
+        created_at,
+        updated_at
+      FROM categories
+      ORDER BY category_name ASC
     `);
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       data: result.rows,
     });
   } catch (error) {
     console.error("Get categories error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Failed to retrieve categories",
     });
   }
 };
 
+const getCategoryById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      `
+      SELECT
+        category_id,
+        category_name,
+        description,
+        default_team_id,
+        is_active,
+        created_at,
+        updated_at
+      FROM categories
+      WHERE category_id = $1
+      `,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Category not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.rows[0],
+    });
+  } catch (error) {
+    console.error("Get category by ID error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to retrieve category",
+    });
+  }
+};
+
 const createCategory = async (req, res) => {
   try {
-    const { category_name } = req.body;
+    const {
+      category_name,
+      description,
+      default_team_id,
+    } = req.body;
 
     if (!category_name || !category_name.trim()) {
       return res.status(400).json({
@@ -43,7 +88,7 @@ const createCategory = async (req, res) => {
     const existingCategory = await pool.query(
       `
       SELECT category_id
-      FROM category
+      FROM categories
       WHERE LOWER(category_name) = LOWER($1)
       `,
       [category_name.trim()]
@@ -58,25 +103,29 @@ const createCategory = async (req, res) => {
 
     const result = await pool.query(
       `
-      INSERT INTO category (
+      INSERT INTO categories (
         category_name,
-        created_by,
-        updated_by
+        description,
+        default_team_id
       )
-      VALUES ($1, $2, $2)
+      VALUES ($1, $2, $3)
       RETURNING
         category_id,
         category_name,
+        description,
         default_team_id,
-        created_by,
-        updated_by,
+        is_active,
         created_at,
         updated_at
       `,
-      [category_name.trim(), req.user.user_id]
+      [
+        category_name.trim(),
+        description?.trim() || null,
+        default_team_id || null,
+      ]
     );
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: "Category created successfully",
       data: result.rows[0],
@@ -84,69 +133,28 @@ const createCategory = async (req, res) => {
   } catch (error) {
     console.error("Create category error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Failed to create category",
     });
   }
 };
 
-const getCategoryById = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const result = await pool.query(
-      `
-      SELECT
-        c.category_id,
-        c.category_name,
-        c.default_team_id,
-        c.created_by,
-        c.updated_by,
-        c.created_at,
-        c.updated_at
-      FROM category c
-      WHERE c.category_id = $1
-      `,
-      [id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Category not found",
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      data: result.rows[0],
-    });
-  } catch (error) {
-    console.error("Get category by ID error:", error);
-
-    res.status(500).json({
-      success: false,
-      message: "Failed to retrieve category",
-    });
-  }
-};
 const updateCategory = async (req, res) => {
   try {
     const { id } = req.params;
-    const { category_name } = req.body;
 
-    if (!category_name || !category_name.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: "category_name is required",
-      });
-    }
+    const {
+      category_name,
+      description,
+      default_team_id,
+      is_active,
+    } = req.body;
 
     const existingCategory = await pool.query(
       `
       SELECT category_id
-      FROM category
+      FROM categories
       WHERE category_id = $1
       `,
       [id]
@@ -159,44 +167,61 @@ const updateCategory = async (req, res) => {
       });
     }
 
-    const duplicateCategory = await pool.query(
-      `
-      SELECT category_id
-      FROM category
-      WHERE LOWER(category_name) = LOWER($1)
-        AND category_id <> $2
-      `,
-      [category_name.trim(), id]
-    );
+    if (category_name !== undefined) {
+      if (!category_name || !category_name.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "category_name cannot be empty",
+        });
+      }
 
-    if (duplicateCategory.rows.length > 0) {
-      return res.status(409).json({
-        success: false,
-        message: "Category already exists",
-      });
+      const duplicateCategory = await pool.query(
+        `
+        SELECT category_id
+        FROM categories
+        WHERE LOWER(category_name) = LOWER($1)
+          AND category_id <> $2
+        `,
+        [category_name.trim(), id]
+      );
+
+      if (duplicateCategory.rows.length > 0) {
+        return res.status(409).json({
+          success: false,
+          message: "Category already exists",
+        });
+      }
     }
 
     const result = await pool.query(
       `
-      UPDATE category
+      UPDATE categories
       SET
-        category_name = $1,
-        updated_by = $2,
+        category_name = COALESCE($1, category_name),
+        description = COALESCE($2, description),
+        default_team_id = COALESCE($3, default_team_id),
+        is_active = COALESCE($4, is_active),
         updated_at = NOW()
-      WHERE category_id = $3
+      WHERE category_id = $5
       RETURNING
         category_id,
         category_name,
+        description,
         default_team_id,
-        created_by,
-        updated_by,
+        is_active,
         created_at,
         updated_at
       `,
-      [category_name.trim(), req.user.user_id, id]
+      [
+        category_name !== undefined ? category_name.trim() : null,
+        description !== undefined ? description.trim() : null,
+        default_team_id !== undefined ? default_team_id : null,
+        is_active !== undefined ? is_active : null,
+        id,
+      ]
     );
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: "Category updated successfully",
       data: result.rows[0],
@@ -204,7 +229,7 @@ const updateCategory = async (req, res) => {
   } catch (error) {
     console.error("Update category error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Failed to update category",
     });
@@ -213,7 +238,7 @@ const updateCategory = async (req, res) => {
 
 module.exports = {
   getCategories,
-  createCategory,
   getCategoryById,
+  createCategory,
   updateCategory,
 };

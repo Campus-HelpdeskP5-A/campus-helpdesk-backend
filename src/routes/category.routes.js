@@ -27,7 +27,6 @@ const router = express.Router();
  */
 router.get("/", getCategories);
 
-
 /**
  * @swagger
  * /api/categories/{id}:
@@ -40,8 +39,9 @@ router.get("/", getCategories);
  *         name: id
  *         required: true
  *         schema:
- *           type: integer
- *         description: Category ID
+ *           type: string
+ *           format: uuid
+ *         description: Category UUID
  *     responses:
  *       200:
  *         description: Category retrieved successfully
@@ -51,7 +51,6 @@ router.get("/", getCategories);
  *         description: Server error
  */
 router.get("/:id", getCategoryById);
-
 
 /**
  * @swagger
@@ -70,10 +69,17 @@ router.get("/:id", getCategoryById);
  *             type: object
  *             required:
  *               - category_name
- *             properties:
- *               category_name:
- *                 type: string
- *                 example: IT Support
+ *           properties:
+ *             category_name:
+ *               type: string
+ *               example: IT Support
+ *             description:
+ *               type: string
+ *               example: Technical issues related to IT services
+ *             default_team_id:
+ *               type: string
+ *               format: uuid
+ *               nullable: true
  *     responses:
  *       201:
  *         description: Category created successfully
@@ -82,7 +88,7 @@ router.get("/:id", getCategoryById);
  *       401:
  *         description: Authentication required
  *       403:
- *         description: Admin access required
+ *         description: Insufficient permissions
  *       409:
  *         description: Category already exists
  *       500:
@@ -91,10 +97,9 @@ router.get("/:id", getCategoryById);
 router.post(
   "/",
   authenticate,
-  authorize("admin"),
+  authorize("MANAGER"),
   createCategory
 );
-
 
 /**
  * @swagger
@@ -110,29 +115,38 @@ router.post(
  *         name: id
  *         required: true
  *         schema:
- *           type: integer
- *         description: Category ID
+ *           type: string
+ *           format: uuid
+ *         description: Category UUID
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - category_name
- *             properties:
- *               category_name:
- *                 type: string
- *                 example: Technical Support
+ *           properties:
+ *             category_name:
+ *               type: string
+ *               example: Technical Support
+ *             description:
+ *               type: string
+ *               example: Updated category description
+ *             default_team_id:
+ *               type: string
+ *               format: uuid
+ *               nullable: true
+ *             is_active:
+ *               type: boolean
+ *               example: true
  *     responses:
  *       200:
  *         description: Category updated successfully
  *       400:
- *         description: Category name is required
+ *         description: Invalid category data
  *       401:
  *         description: Authentication required
  *       403:
- *         description: Admin access required
+ *         description: Insufficient permissions
  *       404:
  *         description: Category not found
  *       409:
@@ -143,7 +157,7 @@ router.post(
 router.put(
   "/:id",
   authenticate,
-  authorize("admin"),
+  authorize("MANAGER"),
   updateCategory
 );
 
