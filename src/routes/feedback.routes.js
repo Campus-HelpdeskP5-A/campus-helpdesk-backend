@@ -1,4 +1,3 @@
-```js
 const express = require("express");
 
 const authenticate = require("../middlewares/auth.middleware");
@@ -59,4 +58,3 @@ router.delete(
 );
 
 module.exports = router;
-```
