@@ -73,9 +73,12 @@ app.get("/api-docs.json", (req, res) => {
 app.use(
   "/api-docs",
   swaggerUi.serve,
-  swaggerUi.setup(swaggerSpec, {
+  swaggerUi.setup(null, {
     explorer: true,
     customSiteTitle: "Campus Helpdesk API Documentation",
+    swaggerOptions: {
+      url: "/api-docs.json",
+    },
   })
 );
 
