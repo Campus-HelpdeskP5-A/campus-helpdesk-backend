@@ -66,10 +66,17 @@ app.use(express.json());
 /**
  * Swagger
  */
+app.get("/api-docs.json", (req, res) => {
+  res.json(swaggerSpec);
+});
+
 app.use(
   "/api-docs",
   swaggerUi.serve,
-  swaggerUi.setup(swaggerSpec)
+  swaggerUi.setup(swaggerSpec, {
+    explorer: true,
+    customSiteTitle: "Campus Helpdesk API Documentation",
+  })
 );
 
 /**

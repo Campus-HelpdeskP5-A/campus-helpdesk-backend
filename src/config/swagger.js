@@ -1,4 +1,9 @@
+
 const swaggerJsdoc = require("swagger-jsdoc");
+
+const productionUrl =
+  process.env.API_BASE_URL ||
+  "https://campus-helpdesk-api-campus-helpdesk-p5-a.vercel.app";
 
 const options = {
   definition: {
@@ -16,8 +21,12 @@ const options = {
 
     servers: [
       {
+        url: productionUrl,
+        description: "Production API",
+      },
+      {
         url: "http://localhost:5000",
-        description: "Local development server",
+        description: "Local Development API",
       },
     ],
 
@@ -95,7 +104,7 @@ const options = {
           scheme: "bearer",
           bearerFormat: "JWT",
           description:
-            "Enter your JWT token. Example: eyJhbGciOiJIUzI1NiIs...",
+            "Enter your JWT token without the Bearer prefix.",
         },
       },
 
@@ -170,10 +179,10 @@ const options = {
     },
   },
 
-  apis: [
-    "./src/routes/*.js",
-    "./src/app.js",
-  ],
+   apis: [
+  "./src/routes/*.js",
+  "./src/app.js",
+],
 };
 
 const swaggerSpec = swaggerJsdoc(options);
