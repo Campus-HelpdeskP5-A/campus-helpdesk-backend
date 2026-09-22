@@ -1,4 +1,9 @@
 const swaggerJsdoc = require("swagger-jsdoc");
+const path = require("path");
+
+const productionUrl =
+  process.env.API_BASE_URL ||
+  "https://campus-helpdesk-api-campus-helpdesk-p5-a.vercel.app";
 
 const options = {
   definition: {
@@ -14,12 +19,17 @@ const options = {
         "AI-assisted ticket classification, notifications, feedback, and auditing.",
     },
 
- servers: [
-  {
-    url: process.env.API_BASE_URL || "http://localhost:5000",
-    description: "Campus Helpdesk API",
-  },
-],
+    servers: [
+      {
+        url: productionUrl,
+        description: "Production API",
+      },
+      {
+        url: "http://localhost:5000",
+        description: "Local Development API",
+      },
+    ],
+
     tags: [
       {
         name: "Authentication",
@@ -94,7 +104,7 @@ const options = {
           scheme: "bearer",
           bearerFormat: "JWT",
           description:
-            "Enter your JWT token. Example: eyJhbGciOiJIUzI1NiIs...",
+            "Enter your JWT token without the Bearer prefix.",
         },
       },
 
@@ -170,8 +180,8 @@ const options = {
   },
 
   apis: [
-    "./src/routes/*.js",
-    "./src/app.js",
+    path.join(__dirname, "../routes/*.js"),
+    path.join(__dirname, "../app.js"),
   ],
 };
 
