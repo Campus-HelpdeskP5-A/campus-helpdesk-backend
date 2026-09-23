@@ -8,10 +8,17 @@ const pool = new Pool({
   database: process.env.DB_NAME,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
-
   ssl: {
     rejectUnauthorized: false,
   },
+});
+
+pool.on("connect", () => {
+  console.log("Connected to Neon PostgreSQL");
+});
+
+pool.on("error", (err) => {
+  console.error("Unexpected PostgreSQL error:", err);
 });
 
 module.exports = pool;
