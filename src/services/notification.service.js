@@ -8,6 +8,7 @@ const pool = require("../config/database");
  * It should NOT be called directly by the frontend.
  */
 const createNotification = async ({
+  client = pool,
   recipientUserId,
   ticketId = null,
   relatedUserId = null,
@@ -26,7 +27,7 @@ const createNotification = async ({
     );
   }
 
-  const result = await pool.query(
+  const result = await client.query(
     `
     INSERT INTO notifications (
       recipient_user_id,
@@ -106,9 +107,35 @@ const notifyEscalation = async ({
   });
 };
 
+const notifySlaStatus = async ({
+  client,
+  recipientUserId,
+  ticketId,
+  referenceNumber,
+  status,
+}) => {
+  const isBreach = status === "BREACHED";
+
+  return createNotification({
+    client,
+    recipientUserId,
+    ticketId,
+    notificationType: isBreach
+      ? "SLA_BREACH"
+      : "SLA_RISK",
+    title: isBreach
+      ? "SLA Breach"
+      : "SLA Risk Detected",
+    body: isBreach
+      ? `Ticket ${referenceNumber} has breached its SLA.`
+      : `Ticket ${referenceNumber} is approaching its SLA deadline.`,
+  });
+};
+
 module.exports = {
   createNotification,
   notifyTicketAssigned,
   notifyStatusChanged,
   notifyEscalation,
+  notifySlaStatus,
 };

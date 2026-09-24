@@ -1579,6 +1579,24 @@ const openapiDocument = {
       },
     },
 
+    "/api/sla/evaluate": {
+      post: {
+        tags: ["SLA"],
+        summary: "Evaluate active SLA executions",
+        description:
+          "Runs one idempotent SLA monitoring cycle. Manager authorization is required.",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: {
+            description: "SLA evaluation completed successfully",
+          },
+          403: {
+            description: "Manager authorization required",
+          },
+        },
+      },
+    },
+
     "/api/sla/business-hours/{id}": {
       get: {
         tags: ["SLA"],

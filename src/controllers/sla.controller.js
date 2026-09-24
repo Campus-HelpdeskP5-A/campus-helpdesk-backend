@@ -22,6 +22,9 @@ const VALID_PRIORITIES = [
 const {
   getCanonicalPriority,
 } = require("../utils/priorityMatrix");
+const {
+  evaluateSlaExecutions,
+} = require("../services/sla.service");
 
 const validateDays = (days) => {
   if (!Array.isArray(days) || days.length !== 7) {
@@ -63,6 +66,26 @@ const validateDays = (days) => {
   }
 
   return null;
+};
+
+// POST /api/sla/evaluate
+const evaluateSla = async (req, res) => {
+  try {
+    const statistics = await evaluateSlaExecutions();
+
+    return res.status(200).json({
+      success: true,
+      message: "SLA evaluation completed successfully",
+      data: statistics,
+    });
+  } catch (error) {
+    console.error("Evaluate SLA error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to evaluate SLA executions",
+    });
+  }
 };
 
 /*
@@ -1519,4 +1542,5 @@ module.exports = {
   resolvePriority,
   createPriorityMatrix,
   updatePriorityMatrix,
+  evaluateSla,
 };

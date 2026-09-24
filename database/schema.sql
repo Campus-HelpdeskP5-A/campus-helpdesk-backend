@@ -1,13 +1,8 @@
+
 -- =========================================================
 -- HLP — Campus Helpdesk & Maintenance Tickets
 -- FINAL PostgreSQL DATABASE SCHEMA
--- Based strictly on FINAL ERD
 -- 26 ENTITIES
--- =========================================================
-
-
--- =========================================================
--- 0. EXTENSIONS
 -- =========================================================
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -15,7 +10,7 @@ CREATE EXTENSION IF NOT EXISTS citext;
 
 
 -- =========================================================
--- 0.1 ENUM TYPES
+-- ENUM TYPES
 -- =========================================================
 
 CREATE TYPE user_role AS ENUM (
@@ -141,7 +136,6 @@ CREATE TABLE users (
     full_name TEXT,
 
     role user_role NULL,
-
     requested_role user_role NULL,
 
     account_status account_status NOT NULL,
@@ -214,7 +208,6 @@ CREATE TABLE user_teams (
 
     is_primary BOOLEAN NOT NULL DEFAULT FALSE,
 
-    -- Timestamp when the user left the team. NULL = active membership.
     left_at TIMESTAMPTZ NULL,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -392,9 +385,7 @@ CREATE TABLE business_hours_days (
         UNIQUE (business_hours_id, day_of_week),
 
     CONSTRAINT chk_day_of_week
-        CHECK (
-            day_of_week BETWEEN 0 AND 6
-        ),
+        CHECK (day_of_week BETWEEN 0 AND 6),
 
     CONSTRAINT chk_business_hours_time
         CHECK (
@@ -447,14 +438,10 @@ CREATE TABLE sla_profiles (
         ON DELETE RESTRICT,
 
     CONSTRAINT chk_sla_response_target
-        CHECK (
-            response_target_minutes > 0
-        ),
+        CHECK (response_target_minutes > 0),
 
     CONSTRAINT chk_sla_resolution_target
-        CHECK (
-            resolution_target_minutes > 0
-        )
+        CHECK (resolution_target_minutes > 0)
 );
 
 
@@ -598,7 +585,14 @@ CREATE TABLE ticket_sla_executions (
 
     resolution_sla_started_at TIMESTAMPTZ NULL,
 
+    -- Overall SLA status
     sla_status sla_status NOT NULL DEFAULT 'ON_TRACK',
+
+    -- Independent Response SLA status
+    response_sla_status sla_status NOT NULL DEFAULT 'ON_TRACK',
+
+    -- Independent Resolution SLA status
+    resolution_sla_status sla_status NOT NULL DEFAULT 'ON_TRACK',
 
     response_breached_at TIMESTAMPTZ NULL,
 
@@ -637,14 +631,10 @@ CREATE TABLE ticket_sla_executions (
         ON DELETE RESTRICT,
 
     CONSTRAINT chk_sla_execution_response_target
-        CHECK (
-            response_target_minutes > 0
-        ),
+        CHECK (response_target_minutes > 0),
 
     CONSTRAINT chk_sla_execution_resolution_target
-        CHECK (
-            resolution_target_minutes > 0
-        ),
+        CHECK (resolution_target_minutes > 0),
 
     CONSTRAINT chk_sla_execution_current
         CHECK (
@@ -893,9 +883,7 @@ CREATE TABLE attachments (
         ON DELETE RESTRICT,
 
     CONSTRAINT chk_attachment_file_size
-        CHECK (
-            file_size >= 0
-        )
+        CHECK (file_size >= 0)
 );
 
 
@@ -911,7 +899,9 @@ CREATE TABLE work_logs (
     user_id UUID NOT NULL,
 
     started_at TIMESTAMPTZ NULL,
+
     ended_at TIMESTAMPTZ NULL,
+
     note TEXT NULL,
 
     diagnosis TEXT,
@@ -939,9 +929,7 @@ CREATE TABLE work_logs (
         ON DELETE RESTRICT,
 
     CONSTRAINT chk_work_log_time
-        CHECK (
-            time_spent_minutes >= 0
-        )
+        CHECK (time_spent_minutes >= 0)
 );
 
 
@@ -1223,9 +1211,7 @@ CREATE TABLE ticket_relations (
         ON DELETE RESTRICT,
 
     CONSTRAINT chk_ticket_relation_self
-        CHECK (
-            ticket_id <> related_ticket_id
-        ),
+        CHECK (ticket_id <> related_ticket_id),
 
     CONSTRAINT uq_ticket_relation
         UNIQUE (
@@ -1252,6 +1238,7 @@ CREATE TABLE audit_logs (
     entity_id UUID,
 
     old_values JSONB NULL,
+
     new_values JSONB NULL,
 
     ip_address INET NULL,
@@ -1269,21 +1256,11 @@ CREATE TABLE audit_logs (
 -- INDEXES
 -- =========================================================
 
-
--- =========================================================
--- USERS
--- =========================================================
-
 CREATE INDEX idx_users_role
 ON users(role);
 
 CREATE INDEX idx_users_account_status
 ON users(account_status);
-
-
--- =========================================================
--- USER TEAMS
--- =========================================================
 
 CREATE INDEX idx_user_teams_user
 ON user_teams(user_id);
@@ -1291,32 +1268,17 @@ ON user_teams(user_id);
 CREATE INDEX idx_user_teams_team
 ON user_teams(support_team_id);
 
-
--- =========================================================
--- TECHNICIAN PROFILES
--- =========================================================
-
 CREATE INDEX idx_technician_profiles_user
 ON technician_profiles(user_id);
 
 CREATE INDEX idx_technician_profiles_availability
 ON technician_profiles(is_available);
 
-
--- =========================================================
--- SUPPORT TEAMS
--- =========================================================
-
 CREATE INDEX idx_support_teams_created_by
 ON support_teams(created_by);
 
 CREATE INDEX idx_support_teams_updated_by
 ON support_teams(updated_by);
-
-
--- =========================================================
--- CATEGORIES
--- =========================================================
 
 CREATE INDEX idx_categories_default_team
 ON categories(default_team_id);
@@ -1327,42 +1289,17 @@ ON categories(created_by);
 CREATE INDEX idx_categories_updated_by
 ON categories(updated_by);
 
-
--- =========================================================
--- LOCATIONS
--- =========================================================
-
 CREATE INDEX idx_locations_building
 ON locations(building);
-
-
--- =========================================================
--- ASSETS
--- =========================================================
 
 CREATE INDEX idx_assets_location
 ON assets(location_id);
 
-
--- =========================================================
--- BUSINESS HOURS
--- =========================================================
-
 CREATE INDEX idx_business_hours_active
 ON business_hours(is_active);
 
-
--- =========================================================
--- BUSINESS HOURS DAYS
--- =========================================================
-
 CREATE INDEX idx_business_hours_days_business_hours
 ON business_hours_days(business_hours_id);
-
-
--- =========================================================
--- SLA PROFILES
--- =========================================================
 
 CREATE INDEX idx_sla_profiles_business_hours
 ON sla_profiles(business_hours_id);
@@ -1373,21 +1310,11 @@ ON sla_profiles(created_by);
 CREATE INDEX idx_sla_profiles_updated_by
 ON sla_profiles(updated_by);
 
-
--- =========================================================
--- PRIORITY MATRICES
--- =========================================================
-
 CREATE INDEX idx_priority_matrices_sla
 ON priority_matrices(sla_profile_id);
 
 CREATE INDEX idx_priority_matrices_active
 ON priority_matrices(is_active);
-
-
--- =========================================================
--- TICKETS
--- =========================================================
 
 CREATE INDEX idx_tickets_reference_number
 ON tickets(reference_number);
@@ -1436,6 +1363,12 @@ ON ticket_sla_executions(resolution_due_at);
 CREATE INDEX idx_ticket_sla_executions_sla_status
 ON ticket_sla_executions(sla_status);
 
+CREATE INDEX idx_ticket_sla_executions_response_status
+ON ticket_sla_executions(response_sla_status);
+
+CREATE INDEX idx_ticket_sla_executions_resolution_status
+ON ticket_sla_executions(resolution_sla_status);
+
 CREATE INDEX idx_ticket_sla_executions_effective_from
 ON ticket_sla_executions(effective_from);
 
@@ -1444,11 +1377,6 @@ ON ticket_sla_executions(effective_to);
 
 CREATE INDEX idx_ticket_sla_executions_current
 ON ticket_sla_executions(is_current);
-
-
--- =========================================================
--- ASSIGNMENTS
--- =========================================================
 
 CREATE INDEX idx_assignments_ticket
 ON assignments(ticket_id);
@@ -1472,11 +1400,6 @@ CREATE UNIQUE INDEX uq_assignments_current_ticket
 ON assignments(ticket_id)
 WHERE is_current = TRUE;
 
-
--- =========================================================
--- STATUS HISTORIES
--- =========================================================
-
 CREATE INDEX idx_status_histories_ticket_created
 ON status_histories(ticket_id, changed_at);
 
@@ -1485,11 +1408,6 @@ ON status_histories(changed_by);
 
 CREATE INDEX idx_status_histories_new_status
 ON status_histories(new_status);
-
-
--- =========================================================
--- TICKET EVENTS
--- =========================================================
 
 CREATE INDEX idx_ticket_events_ticket_created
 ON ticket_events(ticket_id, created_at);
@@ -1500,32 +1418,17 @@ ON ticket_events(actor_user_id);
 CREATE INDEX idx_ticket_events_type
 ON ticket_events(event_type);
 
-
--- =========================================================
--- COMMENTS
--- =========================================================
-
 CREATE INDEX idx_comments_ticket_created
 ON comments(ticket_id, created_at);
 
 CREATE INDEX idx_comments_author
 ON comments(user_id);
 
-
--- =========================================================
--- ATTACHMENTS
--- =========================================================
-
 CREATE INDEX idx_attachments_ticket
 ON attachments(ticket_id);
 
 CREATE INDEX idx_attachments_uploaded_by
 ON attachments(uploaded_by);
-
-
--- =========================================================
--- WORK LOGS
--- =========================================================
 
 CREATE INDEX idx_work_logs_ticket
 ON work_logs(ticket_id);
@@ -1536,11 +1439,6 @@ ON work_logs(user_id);
 CREATE INDEX idx_work_logs_created_at
 ON work_logs(created_at);
 
-
--- =========================================================
--- FEEDBACK
--- =========================================================
-
 CREATE INDEX idx_feedback_ticket
 ON feedback(ticket_id);
 
@@ -1549,11 +1447,6 @@ ON feedback(user_id);
 
 CREATE INDEX idx_feedback_rating
 ON feedback(rating);
-
-
--- =========================================================
--- ESCALATIONS
--- =========================================================
 
 CREATE INDEX idx_escalations_ticket
 ON escalations(ticket_id);
@@ -1570,11 +1463,6 @@ ON escalations(assigned_to);
 CREATE INDEX idx_escalations_created_at
 ON escalations(triggered_at);
 
-
--- =========================================================
--- NOTIFICATIONS
--- =========================================================
-
 CREATE INDEX idx_notifications_recipient
 ON notifications(recipient_user_id);
 
@@ -1588,21 +1476,11 @@ CREATE INDEX idx_notifications_unread
 ON notifications(recipient_user_id, is_read)
 WHERE is_read = FALSE;
 
-
--- =========================================================
--- AI MODEL VERSIONS
--- =========================================================
-
 CREATE INDEX idx_ai_model_versions_model
 ON ai_model_versions(model_name);
 
 CREATE INDEX idx_ai_model_versions_created_at
 ON ai_model_versions(created_at);
-
-
--- =========================================================
--- PREDICTIONS
--- =========================================================
 
 CREATE INDEX idx_predictions_ticket_created
 ON predictions(ticket_id, created_at);
@@ -1616,11 +1494,6 @@ ON predictions(model_version_id);
 CREATE INDEX idx_predictions_reviewed_by
 ON predictions(reviewed_by);
 
-
--- =========================================================
--- TICKET RELATIONS
--- =========================================================
-
 CREATE INDEX idx_ticket_relations_ticket
 ON ticket_relations(ticket_id);
 
@@ -1629,11 +1502,6 @@ ON ticket_relations(related_ticket_id);
 
 CREATE INDEX idx_ticket_relations_type
 ON ticket_relations(relation_type);
-
-
--- =========================================================
--- AUDIT LOGS
--- =========================================================
 
 CREATE INDEX idx_audit_logs_actor
 ON audit_logs(actor_user_id);
@@ -1647,9 +1515,8 @@ ON audit_logs(created_at);
 CREATE INDEX idx_audit_logs_action
 ON audit_logs(action);
 
-
 -- =========================================================
 -- END OF FINAL HLP DATABASE SCHEMA
 -- 26 ENTITIES
--- Based on FINAL ERD
 -- =========================================================
+

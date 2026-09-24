@@ -15,12 +15,20 @@ const {
   resolvePriority,
   createPriorityMatrix,
   updatePriorityMatrix,
+  evaluateSla,
 } = require("../controllers/sla.controller");
 
 const authenticate = require("../middlewares/auth.middleware");
 const authorize = require("../middlewares/role.middleware");
 
 const router = express.Router();
+
+router.post(
+  "/evaluate",
+  authenticate,
+  authorize("MANAGER"),
+  evaluateSla
+);
 
 /*
 |--------------------------------------------------------------------------
