@@ -2,20 +2,9 @@ const pool = require("../config/database");
 const {
   canAccessTicket,
 } = require("../utils/accessControl");
-
-/**
- * Allowed ticket statuses.
- *
- * Keep these values aligned with the
- * tickets.status CHECK constraint.
- */
-const VALID_STATUSES = [
-  "OPEN",
-  "IN_PROGRESS",
-  "PENDING",
-  "RESOLVED",
-  "CLOSED",
-];
+const {
+  VALID_TICKET_STATUSES: VALID_STATUSES,
+} = require("../utils/ticketWorkflow");
 
 /**
  * GET /api/status-history/ticket/:ticketId

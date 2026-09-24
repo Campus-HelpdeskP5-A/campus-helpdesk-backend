@@ -94,6 +94,7 @@ const getTicketPredictions = async (
         p.prediction_type,
         p.predicted_value,
         p.confidence,
+        p.explanation,
         p.created_at AS prediction_timestamp,
 
         p.decision,
@@ -170,6 +171,7 @@ const getPredictionById = async (
         p.prediction_type,
         p.predicted_value,
         p.confidence,
+        p.explanation,
         p.created_at AS prediction_timestamp,
 
         p.decision,
@@ -264,6 +266,7 @@ const createPrediction = async (
       prediction_type,
       predicted_value,
       confidence,
+      explanation,
     } = req.body;
 
     const { role } = req.user;
@@ -401,6 +404,7 @@ const createPrediction = async (
         prediction_type,
         predicted_value,
         confidence,
+        explanation,
         decision
       )
       VALUES (
@@ -409,6 +413,7 @@ const createPrediction = async (
         $3,
         $4,
         $5,
+        $6,
         'PENDING'
       )
       RETURNING
@@ -418,6 +423,7 @@ const createPrediction = async (
         prediction_type,
         predicted_value,
         confidence,
+        explanation,
         created_at AS prediction_timestamp,
         decision,
         override_value,
@@ -431,6 +437,25 @@ const createPrediction = async (
         prediction_type,
         predicted_value,
         normalizedConfidence,
+        explanation || null,
+      ]
+    );
+
+    await pool.query(
+      `
+      INSERT INTO ticket_events (
+        ticket_id, event_type, actor_user_id, event_data
+      )
+      VALUES ($1, 'AI_SUGGESTION_CREATED', $2, $3::jsonb)
+      `,
+      [
+        ticket_id,
+        req.user.user_id,
+        JSON.stringify({
+          prediction_id: result.rows[0].prediction_id,
+          prediction_type,
+          confidence: normalizedConfidence,
+        }),
       ]
     );
 
@@ -640,6 +665,7 @@ const reviewPrediction = async (
         prediction_type,
         predicted_value,
         confidence,
+        explanation,
         created_at AS prediction_timestamp,
         decision,
         override_value,
@@ -658,6 +684,30 @@ const reviewPrediction = async (
         user_id,
 
         id,
+      ]
+    );
+
+    await pool.query(
+      `
+      INSERT INTO ticket_events (
+        ticket_id, event_type, actor_user_id, event_data
+      )
+      VALUES ($1, $2, $3, $4::jsonb)
+      `,
+      [
+        existing.ticket_id,
+        normalizedDecision === "ACCEPTED"
+          ? "AI_SUGGESTION_ACCEPTED"
+          : "AI_SUGGESTION_OVERRIDDEN",
+        user_id,
+        JSON.stringify({
+          prediction_id: id,
+          decision: normalizedDecision,
+          override_value:
+            normalizedDecision === "OVERRIDDEN"
+              ? override_value
+              : null,
+        }),
       ]
     );
 

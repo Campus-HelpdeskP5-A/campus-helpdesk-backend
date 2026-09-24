@@ -2,7 +2,14 @@ const pool = require("../config/database");
 
 const {
   notifyTicketAssigned,
+  notifyStatusChanged,
 } = require("../services/notification.service");
+const {
+  writeAuditLog,
+} = require("../services/audit.service");
+const {
+  canAccessTicket,
+} = require("../utils/accessControl");
 
 /**
  * GET /api/assignments
@@ -190,6 +197,70 @@ const getAssignmentById = async (req, res) => {
 };
 
 /**
+ * GET /api/assignments/workload
+ *
+ * Return active workload and a least-loaded suggestion. The caller still
+ * chooses the final assignee through the assignment endpoints.
+ */
+const getAssignmentWorkload = async (req, res) => {
+  try {
+    const { support_team_id: supportTeamId } = req.query;
+    const params = [];
+    let teamFilter = "";
+
+    if (supportTeamId) {
+      params.push(supportTeamId);
+      teamFilter = `AND EXISTS (
+        SELECT 1
+        FROM user_teams filter_ut
+        WHERE filter_ut.user_id = u.user_id
+          AND filter_ut.support_team_id = $1
+          AND filter_ut.left_at IS NULL
+      )`;
+    }
+
+    const result = await pool.query(
+      `
+      SELECT
+        u.user_id,
+        u.full_name,
+        u.email,
+        u.role,
+        COUNT(t.ticket_id)::int AS active_ticket_count
+      FROM users u
+      LEFT JOIN assignments a
+        ON a.assigned_to = u.user_id
+       AND a.is_current = TRUE
+      LEFT JOIN tickets t
+        ON t.ticket_id = a.ticket_id
+       AND t.status NOT IN ('RESOLVED', 'CLOSED')
+      WHERE u.role IN ('AGENT', 'TECHNICIAN')
+        AND u.account_status = 'ACTIVE'
+        ${teamFilter}
+      GROUP BY u.user_id, u.full_name, u.email, u.role
+      ORDER BY active_ticket_count ASC, u.full_name ASC
+      `,
+      params
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        workload: result.rows,
+        suggested_assignee: result.rows[0] || null,
+      },
+    });
+  } catch (error) {
+    console.error("Get assignment workload error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to retrieve assignment workload",
+    });
+  }
+};
+
+/**
  * POST /api/assignments
  *
  * Create a new assignment.
@@ -252,6 +323,27 @@ const createAssignment = async (req, res) => {
     }
 
     const ticket = ticketResult.rows[0];
+
+    if (
+      req.user.role === "AGENT" &&
+      !(await canAccessTicket(req.user, ticket_id))
+    ) {
+      await client.query("ROLLBACK");
+
+      return res.status(403).json({
+        success: false,
+        message: "You do not have access to assign this ticket",
+      });
+    }
+
+    if (ticket.status !== "TRIAGED") {
+      await client.query("ROLLBACK");
+
+      return res.status(409).json({
+        success: false,
+        message: "Tickets must be TRIAGED before they can be assigned",
+      });
+    }
 
     /**
      * 2. Validate assigned user.
@@ -344,7 +436,6 @@ const createAssignment = async (req, res) => {
 
       if (!assignedTeam.is_active) {
         await client.query("ROLLBACK");
-
         return res.status(400).json({
           success: false,
           message:
@@ -407,22 +498,18 @@ const createAssignment = async (req, res) => {
       assignmentResult.rows[0];
 
     /**
-     * 6. If ticket is OPEN,
-     * move it to IN_PROGRESS.
+     * 6. A TRIAGED ticket moves to ASSIGNED,
+     * move it to ASSIGNED.
      */
     const statusChanged =
-      ticket.status === "OPEN";
+      ticket.status === "TRIAGED";
 
     if (statusChanged) {
       await client.query(
         `
         UPDATE tickets
         SET
-          status = 'IN_PROGRESS',
-          first_response_at = COALESCE(
-            first_response_at,
-            NOW()
-          ),
+          status = 'ASSIGNED',
           updated_at = NOW()
         WHERE ticket_id = $1
         `,
@@ -451,8 +538,8 @@ const createAssignment = async (req, res) => {
         `,
         [
           ticket_id,
-          "OPEN",
-          "IN_PROGRESS",
+          "TRIAGED",
+          "ASSIGNED",
           req.user.user_id,
           "Ticket assigned",
         ]
@@ -481,12 +568,23 @@ const createAssignment = async (req, res) => {
           "STATUS_CHANGED",
           req.user.user_id,
           JSON.stringify({
-            old_status: "OPEN",
-            new_status: "IN_PROGRESS",
+            old_status: "TRIAGED",
+            new_status: "ASSIGNED",
             reason: "Ticket assigned",
           }),
         ]
       );
+
+        await writeAuditLog({
+          client,
+          actorUserId: req.user.user_id,
+          action: "TICKET_STATUS_CHANGED",
+          entityType: "TICKET",
+          entityId: ticket_id,
+          oldValues: { status: "TRIAGED" },
+          newValues: { status: "ASSIGNED" },
+          ipAddress: req.ip,
+        });
     }
 
     /**
@@ -561,6 +659,23 @@ const createAssignment = async (req, res) => {
       }
     }
 
+    if (statusChanged && ticket.reporter_id) {
+      try {
+        await notifyStatusChanged({
+          recipientUserId: ticket.reporter_id,
+          ticketId: ticket_id,
+          referenceNumber: ticket.reference_number,
+          oldStatus: "TRIAGED",
+          newStatus: "ASSIGNED",
+        });
+      } catch (notificationError) {
+        console.error(
+          "Assignment status notification error:",
+          notificationError
+        );
+      }
+    }
+
     return res.status(201).json({
       success: true,
       message:
@@ -569,7 +684,7 @@ const createAssignment = async (req, res) => {
         assignment,
         status_changed: statusChanged,
         new_status: statusChanged
-          ? "IN_PROGRESS"
+          ? "ASSIGNED"
           : ticket.status,
       },
     });
@@ -1045,6 +1160,7 @@ const removeAssignment = async (
 module.exports = {
   getAssignments,
   getAssignmentById,
+  getAssignmentWorkload,
   createAssignment,
   updateAssignment,
   removeAssignment,

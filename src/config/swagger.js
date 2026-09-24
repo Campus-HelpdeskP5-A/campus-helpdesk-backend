@@ -225,7 +225,17 @@ const openapiDocument = {
           },
           status: {
             type: "string",
-            example: "OPEN",
+            example: "NEW",
+            enum: [
+              "NEW",
+              "TRIAGED",
+              "ASSIGNED",
+              "IN_PROGRESS",
+              "WAITING",
+              "RESOLVED",
+              "REOPENED",
+              "CLOSED",
+            ],
           },
           priority: {
             type: "string",
@@ -831,6 +841,8 @@ const openapiDocument = {
       patch: {
         tags: ["Tickets"],
         summary: "Update ticket status",
+        description:
+          "Allowed lifecycle transitions are NEW to TRIAGED, TRIAGED to ASSIGNED, ASSIGNED to IN_PROGRESS, IN_PROGRESS to WAITING or RESOLVED, WAITING to IN_PROGRESS, and REOPENED to IN_PROGRESS. Reporter reopening uses the dedicated reopen endpoint.",
         security: [{ bearerAuth: [] }],
         parameters: [
           {
@@ -846,6 +858,58 @@ const openapiDocument = {
         responses: {
           200: {
             description: "Ticket status updated successfully",
+          },
+        },
+      },
+    },
+
+    "/api/tickets/{id}/confirm-resolution": {
+      post: {
+        tags: ["Tickets"],
+        summary: "Confirm a resolved ticket",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: {
+            description: "Resolution confirmed and ticket closed",
+          },
+        },
+      },
+    },
+
+    "/api/tickets/{id}/reopen": {
+      post: {
+        tags: ["Tickets"],
+        summary: "Reopen a recently resolved ticket",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        requestBody: {
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: { reason: { type: "string" } },
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Ticket reopened successfully",
           },
         },
       },

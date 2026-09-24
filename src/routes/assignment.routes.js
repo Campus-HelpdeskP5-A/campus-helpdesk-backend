@@ -3,6 +3,7 @@ const express = require("express");
 const {
   getAssignments,
   getAssignmentById,
+  getAssignmentWorkload,
   createAssignment,
   updateAssignment,
   removeAssignment,
@@ -51,6 +52,13 @@ router.get(
  *     security:
  *       - bearerAuth: []
  */
+router.get(
+  "/workload",
+  authenticate,
+  authorize("AGENT", "MANAGER"),
+  getAssignmentWorkload
+);
+
 router.get(
   "/:id",
   authenticate,

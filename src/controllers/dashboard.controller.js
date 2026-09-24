@@ -1,5 +1,9 @@
 const pool = require("../config/database");
 
+const SLA_RISK_WINDOW_MINUTES = Number(
+  process.env.SLA_RISK_WINDOW_MINUTES || 60
+);
+
 // GET /api/dashboard
 // Manager only
 const getDashboard = async (req, res) => {
@@ -19,17 +23,16 @@ const getDashboard = async (req, res) => {
         SELECT
           COUNT(*)::int AS total,
 
-          COUNT(*) FILTER (
-            WHERE status = 'OPEN'
-          )::int AS open,
+          COUNT(*) FILTER (WHERE status = 'NEW')::int AS new,
+          COUNT(*) FILTER (WHERE status = 'TRIAGED')::int AS triaged,
+          COUNT(*) FILTER (WHERE status = 'ASSIGNED')::int AS assigned,
 
           COUNT(*) FILTER (
             WHERE status = 'IN_PROGRESS'
           )::int AS in_progress,
 
-          COUNT(*) FILTER (
-            WHERE status = 'PENDING'
-          )::int AS pending,
+          COUNT(*) FILTER (WHERE status = 'WAITING')::int AS waiting,
+          COUNT(*) FILTER (WHERE status = 'REOPENED')::int AS reopened,
 
           COUNT(*) FILTER (
             WHERE status = 'RESOLVED'
@@ -170,12 +173,31 @@ const getDashboard = async (req, res) => {
               'RESOLVED',
               'CLOSED'
             )
+            AND first_response_at IS NULL
+            AND response_due_at >= NOW()
+            AND response_due_at <= NOW() + ($1 * INTERVAL '1 minute')
+          )::int AS response_sla_at_risk,
+
+          COUNT(*) FILTER (
+            WHERE status NOT IN (
+              'RESOLVED',
+              'CLOSED'
+            )
+            AND resolution_due_at >= NOW()
+            AND resolution_due_at <= NOW() + ($1 * INTERVAL '1 minute')
+          )::int AS resolution_sla_at_risk,
+
+          COUNT(*) FILTER (
+            WHERE status NOT IN (
+              'RESOLVED',
+              'CLOSED'
+            )
             AND response_due_at >= NOW()
             AND resolution_due_at >= NOW()
           )::int AS within_sla
 
         FROM tickets
-      `),
+      `, [SLA_RISK_WINDOW_MINUTES]),
     ]);
 
     return res.status(200).json({
@@ -254,10 +276,13 @@ const getTeamDashboard = async (req, res) => {
 
           tickets: {
             total: 0,
-            open: 0,
+            new: 0,
+            triaged: 0,
+            assigned: 0,
             in_progress: 0,
-            pending: 0,
+            waiting: 0,
             resolved: 0,
+            reopened: 0,
             closed: 0,
           },
 
@@ -278,20 +303,17 @@ const getTeamDashboard = async (req, res) => {
         COUNT(DISTINCT t.ticket_id)::int
           AS total,
 
-        COUNT(DISTINCT t.ticket_id)
-          FILTER (
-            WHERE t.status = 'OPEN'
-          )::int AS open,
+          COUNT(DISTINCT t.ticket_id) FILTER (WHERE t.status = 'NEW')::int AS new,
+          COUNT(DISTINCT t.ticket_id) FILTER (WHERE t.status = 'TRIAGED')::int AS triaged,
+          COUNT(DISTINCT t.ticket_id) FILTER (WHERE t.status = 'ASSIGNED')::int AS assigned,
 
         COUNT(DISTINCT t.ticket_id)
           FILTER (
             WHERE t.status = 'IN_PROGRESS'
           )::int AS in_progress,
 
-        COUNT(DISTINCT t.ticket_id)
-          FILTER (
-            WHERE t.status = 'PENDING'
-          )::int AS pending,
+          COUNT(DISTINCT t.ticket_id) FILTER (WHERE t.status = 'WAITING')::int AS waiting,
+          COUNT(DISTINCT t.ticket_id) FILTER (WHERE t.status = 'REOPENED')::int AS reopened,
 
         COUNT(DISTINCT t.ticket_id)
           FILTER (
@@ -461,10 +483,13 @@ const getReporterDashboard = async (req, res) => {
         `
         SELECT
           COUNT(*)::int AS total,
-          COUNT(*) FILTER (WHERE status = 'OPEN')::int AS open,
+          COUNT(*) FILTER (WHERE status = 'NEW')::int AS new,
+          COUNT(*) FILTER (WHERE status = 'TRIAGED')::int AS triaged,
+          COUNT(*) FILTER (WHERE status = 'ASSIGNED')::int AS assigned,
           COUNT(*) FILTER (WHERE status = 'IN_PROGRESS')::int AS in_progress,
-          COUNT(*) FILTER (WHERE status = 'PENDING')::int AS pending,
+          COUNT(*) FILTER (WHERE status = 'WAITING')::int AS waiting,
           COUNT(*) FILTER (WHERE status = 'RESOLVED')::int AS resolved,
+          COUNT(*) FILTER (WHERE status = 'REOPENED')::int AS reopened,
           COUNT(*) FILTER (WHERE status = 'CLOSED')::int AS closed
         FROM tickets
         WHERE reporter_id = $1
@@ -513,10 +538,13 @@ const getAuditorDashboard = async (req, res) => {
         `
         SELECT
           COUNT(*)::int AS total,
-          COUNT(*) FILTER (WHERE status = 'OPEN')::int AS open,
+          COUNT(*) FILTER (WHERE status = 'NEW')::int AS new,
+          COUNT(*) FILTER (WHERE status = 'TRIAGED')::int AS triaged,
+          COUNT(*) FILTER (WHERE status = 'ASSIGNED')::int AS assigned,
           COUNT(*) FILTER (WHERE status = 'IN_PROGRESS')::int AS in_progress,
-          COUNT(*) FILTER (WHERE status = 'PENDING')::int AS pending,
+          COUNT(*) FILTER (WHERE status = 'WAITING')::int AS waiting,
           COUNT(*) FILTER (WHERE status = 'RESOLVED')::int AS resolved,
+          COUNT(*) FILTER (WHERE status = 'REOPENED')::int AS reopened,
           COUNT(*) FILTER (WHERE status = 'CLOSED')::int AS closed
         FROM tickets
         `

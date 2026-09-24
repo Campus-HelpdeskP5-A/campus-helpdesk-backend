@@ -95,7 +95,10 @@ const canAccessTicket = async (
   }
 
   /**
-   * AGENT / TECHNICIAN
+  * AGENT
+  * Can also access unassigned tickets for triage.
+  *
+  * TECHNICIAN
    *
    * Access is based on:
    *
@@ -106,10 +109,7 @@ const canAccessTicket = async (
    * 2. Current assignment to a team
    *    where the user is currently a member.
    */
-  if (
-    user.role === "AGENT" ||
-    user.role === "TECHNICIAN"
-  ) {
+  if (user.role === "AGENT" || user.role === "TECHNICIAN") {
     const result = await pool.query(
       `
       SELECT 1
@@ -147,6 +147,18 @@ const canAccessTicket = async (
             AND ut.user_id = $2
             AND ut.left_at IS NULL
         )
+
+        OR
+
+        (
+          $3 = 'AGENT'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM assignments a
+            WHERE a.ticket_id = t.ticket_id
+              AND a.is_current = true
+          )
+        )
       )
 
       LIMIT 1
@@ -154,6 +166,7 @@ const canAccessTicket = async (
       [
         ticketId,
         user.user_id,
+        user.role,
       ]
     );
 
@@ -226,17 +239,25 @@ const getTicketAccessFilter = async (
   }
 
   /**
-   * AGENT / TECHNICIAN
+  * AGENT / TECHNICIAN
    *
    * Only:
    *
-   * - directly assigned tickets
+  * - Agents also see unassigned tickets for triage
+  * - directly assigned tickets
    * - tickets assigned to their active teams
    */
-  if (
-    user.role === "AGENT" ||
-    user.role === "TECHNICIAN"
-  ) {
+  if (user.role === "AGENT" || user.role === "TECHNICIAN") {
+    const unassignedClause =
+      user.role === "AGENT"
+        ? `OR NOT EXISTS (
+            SELECT 1
+            FROM assignments unassigned_a
+            WHERE unassigned_a.ticket_id = t.ticket_id
+              AND unassigned_a.is_current = true
+          )`
+        : "";
+
     return {
       clause: `
         (
@@ -263,6 +284,8 @@ const getTicketAccessFilter = async (
               AND ut.user_id = $1
               AND ut.left_at IS NULL
           )
+
+            ${unassignedClause}
         )
       `,
       values: [

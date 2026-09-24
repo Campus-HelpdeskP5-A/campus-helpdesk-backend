@@ -37,18 +37,30 @@ const app = express();
  * CORS
  */
 app.use((req, res, next) => {
-  const allowedOrigins = [
+  const defaultOrigins = [
     "http://localhost:5000",
     "http://localhost:5173",
     "http://127.0.0.1:5000",
     "http://127.0.0.1:5173",
-    "https://campus-helpdesk-frontend.vercel.app",
   ];
+
+  const configuredOrigins = String(
+    process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || ""
+  )
+    .split(",")
+    .map((origin) => origin.trim().replace(/\/+$/, ""))
+    .filter(Boolean);
+
+  const allowedOrigins = new Set([
+    ...defaultOrigins,
+    ...configuredOrigins,
+  ]);
 
   const requestOrigin = req.headers.origin;
 
-  if (allowedOrigins.includes(requestOrigin)) {
+  if (requestOrigin && allowedOrigins.has(requestOrigin)) {
     res.header("Access-Control-Allow-Origin", requestOrigin);
+    res.header("Vary", "Origin");
   }
 
   res.header(

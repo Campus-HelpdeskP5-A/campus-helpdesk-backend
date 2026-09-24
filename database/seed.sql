@@ -5,9 +5,6 @@
 --
 -- 36 TICKETS ONLY
 -- Designed for:
---   - Data Analysis
---   - KPI / SLA dashboards
---   - AI category prediction
 --   - AI priority prediction
 --   - Duplicate detection
 --   - SLA risk prediction
@@ -102,8 +99,6 @@ VALUES
 
 (
     '00000000-0000-0000-0000-000000000003',
-    'omar.staff@university.edu',
-    crypt('Password123!', gen_salt('bf')),
     'Omar Mahmoud',
     'REPORTER',
     'REPORTER',
@@ -111,8 +106,6 @@ VALUES
     NULL,
     NULL,
     '2026-08-03 09:00:00+03',
-    '2026-08-03 09:00:00+03'
-),
 
 -- AGENT
 (
@@ -122,9 +115,6 @@ VALUES
     'Sara Agent',
     'AGENT',
     'AGENT',
-    'ACTIVE',
-    NULL,
-    NULL,
     '2026-07-20 09:00:00+03',
     '2026-07-20 09:00:00+03'
 ),
@@ -707,7 +697,7 @@ VALUES
 -- =========================================================
 
 INSERT INTO priority_matrices (
-    matrix_id,
+    priority_matrix_id,
     impact,
     urgency,
     priority,
@@ -820,6 +810,7 @@ SELECT
         WHEN gs % 5 = 1 THEN
             '00000000-0000-0000-0000-000000000001'::uuid
         WHEN gs % 5 = 2 THEN
+                'NEW',
             '00000000-0000-0000-0000-000000000002'::uuid
         WHEN gs % 5 = 3 THEN
             '00000000-0000-0000-0000-000000000003'::uuid
@@ -979,6 +970,26 @@ SELECT
     '00000000-0000-0000-0000-000000000004'::uuid
 
 FROM generate_series(1,36) AS gs;
+
+-- Requirements §9: ticket priority is derived from the priority matrix
+-- (impact + urgency), never hard-coded.
+UPDATE tickets t
+SET priority = pm.priority
+FROM priority_matrices pm
+WHERE pm.impact = t.impact
+  AND pm.urgency = t.urgency
+  AND pm.is_active = TRUE;
+
+-- Backfill SLA due dates from the configured SLA profile targets
+-- (same elapsed-minutes rule the backend uses on ticket creation).
+UPDATE tickets t
+SET response_due_at = t.created_at
+      + make_interval(mins => sp.response_target_minutes),
+    resolution_due_at = t.created_at
+      + make_interval(mins => sp.resolution_target_minutes)
+FROM sla_profiles sp
+WHERE sp.sla_profile_id = t.sla_profile_id
+  AND t.response_due_at IS NULL;
 
 
 -- =========================================================
@@ -1184,7 +1195,7 @@ INSERT INTO status_histories (
     old_status,
     new_status,
     reason,
-    created_at
+    changed_at
 )
 SELECT
     md5('status-history-' || gs)::uuid,
@@ -1205,7 +1216,7 @@ INSERT INTO status_histories (
     old_status,
     new_status,
     reason,
-    created_at
+    changed_at
 )
 SELECT
     md5('status-history-2-' || gs)::uuid,
@@ -1234,9 +1245,9 @@ FROM generate_series(1,36) AS gs;
 -- =========================================================
 
 INSERT INTO ticket_events (
-    event_id,
+    ticket_event_id,
     ticket_id,
-    actor_id,
+    actor_user_id,
     event_type,
     description,
     old_value,
@@ -1338,7 +1349,7 @@ VALUES
     md5('ticket-9')::uuid,
     '00000000-0000-0000-0000-000000000004'::uuid,
     'STATUS_CHANGED',
-    'Ticket moved to in progress',
+    'Ticket moved to in progress after assignment',
     '{"status":"ASSIGNED"}',
     '{"status":"IN_PROGRESS"}',
     '2026-09-02 12:30:00+03'
@@ -1451,8 +1462,8 @@ VALUES
 INSERT INTO comments (
     comment_id,
     ticket_id,
-    author_id,
-    content,
+    user_id,
+    body,
     visibility
 )
 VALUES
@@ -1508,10 +1519,10 @@ INSERT INTO attachments (
     attachment_id,
     ticket_id,
     uploaded_by,
-    file_path,
+    storage_path,
     file_uuid,
-    original_name,
-    file_type,
+    file_name,
+    mime_type,
     file_size,
     submitted_at,
     visibility
@@ -1562,7 +1573,7 @@ VALUES
 INSERT INTO work_logs (
     work_log_id,
     ticket_id,
-    technician_id,
+    user_id,
     diagnosis,
     actions_taken,
     parts_used,
@@ -1684,8 +1695,8 @@ INSERT INTO escalations (
     trigger_type,
     reason,
     from_user_id,
-    to_user_id,
-    created_at,
+    assigned_to,
+    triggered_at,
     resolved_at,
     status
 )
@@ -1745,7 +1756,7 @@ INSERT INTO notifications (
     recipient_user_id,
     notification_type,
     title,
-    message,
+    body,
     ticket_id,
     related_user_id,
     is_read,
@@ -2042,7 +2053,7 @@ VALUES
 
 INSERT INTO audit_logs (
     audit_log_id,
-    actor_id,
+    actor_user_id,
     action,
     entity_type,
     entity_id,

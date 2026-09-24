@@ -49,7 +49,8 @@ CREATE TYPE urgency_level AS ENUM (
 CREATE TYPE priority_level AS ENUM (
     'LOW',
     'MEDIUM',
-    'HIGH'
+    'HIGH',
+    'CRITICAL'
 );
 
 CREATE TYPE ticket_status AS ENUM (
@@ -75,11 +76,18 @@ CREATE TYPE ticket_event_type AS ENUM (
     'PRIORITY_CHANGED',
     'ASSIGNED',
     'REASSIGNED',
+    'UNASSIGNED',
     'COMMENT_ADDED',
+    'COMMENT_DELETED',
     'ATTACHMENT_ADDED',
+    'ATTACHMENT_DELETED',
     'WORK_LOG_ADDED',
     'STATUS_CHANGED',
     'ESCALATED',
+    'ESCALATION_RESOLVED',
+    'FEEDBACK_CREATED',
+    'FEEDBACK_UPDATED',
+    'FEEDBACK_DELETED',
     'SLA_RISK_DETECTED',
     'SLA_BREACHED',
     'AI_SUGGESTION_CREATED',
@@ -205,6 +213,9 @@ CREATE TABLE user_teams (
     support_team_id UUID NOT NULL,
 
     is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+
+    -- Timestamp when the user left the team. NULL = active membership.
+    left_at TIMESTAMPTZ NULL,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -452,7 +463,7 @@ CREATE TABLE sla_profiles (
 -- =========================================================
 
 CREATE TABLE priority_matrices (
-    matrix_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    priority_matrix_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     impact impact_level NOT NULL,
 
@@ -508,6 +519,9 @@ CREATE TABLE tickets (
     priority priority_level,
 
     status ticket_status NOT NULL DEFAULT 'NEW',
+
+    response_due_at TIMESTAMPTZ NULL,
+    resolution_due_at TIMESTAMPTZ NULL,
 
     assigned_at TIMESTAMPTZ NULL,
 
@@ -666,9 +680,9 @@ CREATE TABLE assignments (
 
     ticket_id UUID NOT NULL,
 
-    assigned_to UUID NOT NULL,
+    assigned_to UUID NULL,
 
-    assigned_team_id UUID NOT NULL,
+    assigned_team_id UUID NULL,
 
     assigned_by UUID NOT NULL,
 
@@ -717,6 +731,12 @@ CREATE TABLE assignments (
             )
         ),
 
+    CONSTRAINT chk_assignment_target
+        CHECK (
+            assigned_to IS NOT NULL
+            OR assigned_team_id IS NOT NULL
+        ),
+
     CONSTRAINT chk_assignment_dates
         CHECK (
             unassigned_at IS NULL
@@ -746,7 +766,7 @@ CREATE TABLE status_histories (
 
     reason TEXT,
 
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    changed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_status_histories_ticket
         FOREIGN KEY (ticket_id)
@@ -771,11 +791,11 @@ CREATE TABLE status_histories (
 -- =========================================================
 
 CREATE TABLE ticket_events (
-    event_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ticket_event_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     ticket_id UUID NOT NULL,
 
-    actor_id UUID NOT NULL,
+    actor_user_id UUID NOT NULL,
 
     event_type ticket_event_type NOT NULL,
 
@@ -785,6 +805,8 @@ CREATE TABLE ticket_events (
 
     new_value JSONB NULL,
 
+    event_data JSONB NULL,
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_ticket_events_ticket
@@ -793,7 +815,7 @@ CREATE TABLE ticket_events (
         ON DELETE CASCADE,
 
     CONSTRAINT fk_ticket_events_actor
-        FOREIGN KEY (actor_id)
+        FOREIGN KEY (actor_user_id)
         REFERENCES users(user_id)
         ON DELETE RESTRICT
 );
@@ -808,11 +830,14 @@ CREATE TABLE comments (
 
     ticket_id UUID NOT NULL,
 
-    author_id UUID NOT NULL,
+    user_id UUID NOT NULL,
 
-    content TEXT,
+    body TEXT,
 
     visibility comment_visibility NOT NULL,
+
+    is_internal BOOLEAN
+        GENERATED ALWAYS AS (visibility = 'INTERNAL') STORED,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -824,7 +849,7 @@ CREATE TABLE comments (
         ON DELETE CASCADE,
 
     CONSTRAINT fk_comments_author
-        FOREIGN KEY (author_id)
+        FOREIGN KEY (user_id)
         REFERENCES users(user_id)
         ON DELETE RESTRICT
 );
@@ -841,17 +866,19 @@ CREATE TABLE attachments (
 
     uploaded_by UUID NOT NULL,
 
-    file_path TEXT,
+    storage_path TEXT,
 
     file_uuid UUID UNIQUE,
 
-    original_name VARCHAR(255),
+    file_name VARCHAR(255),
 
-    file_type VARCHAR(150),
+    mime_type VARCHAR(150),
 
     file_size BIGINT,
 
     submitted_at TIMESTAMPTZ,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     visibility comment_visibility NOT NULL,
 
@@ -881,7 +908,11 @@ CREATE TABLE work_logs (
 
     ticket_id UUID NOT NULL,
 
-    technician_id UUID NOT NULL,
+    user_id UUID NOT NULL,
+
+    started_at TIMESTAMPTZ NULL,
+    ended_at TIMESTAMPTZ NULL,
+    note TEXT NULL,
 
     diagnosis TEXT,
 
@@ -903,7 +934,7 @@ CREATE TABLE work_logs (
         ON DELETE CASCADE,
 
     CONSTRAINT fk_work_logs_technician
-        FOREIGN KEY (technician_id)
+        FOREIGN KEY (user_id)
         REFERENCES users(user_id)
         ON DELETE RESTRICT,
 
@@ -969,13 +1000,17 @@ CREATE TABLE escalations (
 
     trigger_type escalation_trigger_type NOT NULL,
 
+    severity VARCHAR(20),
+
     reason TEXT,
 
     from_user_id UUID NULL,
 
-    to_user_id UUID NULL,
+    assigned_to UUID NULL,
 
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    assigned_team_id UUID NULL,
+
+    triggered_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     resolved_at TIMESTAMPTZ NULL,
 
@@ -992,8 +1027,13 @@ CREATE TABLE escalations (
         ON DELETE RESTRICT,
 
     CONSTRAINT fk_escalations_to_user
-        FOREIGN KEY (to_user_id)
+        FOREIGN KEY (assigned_to)
         REFERENCES users(user_id)
+        ON DELETE RESTRICT,
+
+    CONSTRAINT fk_escalations_assigned_team
+        FOREIGN KEY (assigned_team_id)
+        REFERENCES support_teams(support_team_id)
         ON DELETE RESTRICT
 );
 
@@ -1011,7 +1051,7 @@ CREATE TABLE notifications (
 
     title VARCHAR(255),
 
-    message TEXT,
+    body TEXT,
 
     ticket_id UUID NULL,
 
@@ -1073,6 +1113,8 @@ CREATE TABLE ai_model_versions (
     metric_value NUMERIC,
 
     fallback_description TEXT,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -1201,7 +1243,7 @@ CREATE TABLE ticket_relations (
 CREATE TABLE audit_logs (
     audit_log_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-    actor_id UUID NULL,
+    actor_user_id UUID NULL,
 
     action VARCHAR(100),
 
@@ -1209,12 +1251,15 @@ CREATE TABLE audit_logs (
 
     entity_id UUID,
 
+    old_values JSONB NULL,
+    new_values JSONB NULL,
+
     ip_address INET NULL,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_audit_logs_actor
-        FOREIGN KEY (actor_id)
+        FOREIGN KEY (actor_user_id)
         REFERENCES users(user_id)
         ON DELETE RESTRICT
 );
@@ -1433,7 +1478,7 @@ WHERE is_current = TRUE;
 -- =========================================================
 
 CREATE INDEX idx_status_histories_ticket_created
-ON status_histories(ticket_id, created_at);
+ON status_histories(ticket_id, changed_at);
 
 CREATE INDEX idx_status_histories_changed_by
 ON status_histories(changed_by);
@@ -1450,7 +1495,7 @@ CREATE INDEX idx_ticket_events_ticket_created
 ON ticket_events(ticket_id, created_at);
 
 CREATE INDEX idx_ticket_events_actor
-ON ticket_events(actor_id);
+ON ticket_events(actor_user_id);
 
 CREATE INDEX idx_ticket_events_type
 ON ticket_events(event_type);
@@ -1464,7 +1509,7 @@ CREATE INDEX idx_comments_ticket_created
 ON comments(ticket_id, created_at);
 
 CREATE INDEX idx_comments_author
-ON comments(author_id);
+ON comments(user_id);
 
 
 -- =========================================================
@@ -1486,7 +1531,7 @@ CREATE INDEX idx_work_logs_ticket
 ON work_logs(ticket_id);
 
 CREATE INDEX idx_work_logs_technician
-ON work_logs(technician_id);
+ON work_logs(user_id);
 
 CREATE INDEX idx_work_logs_created_at
 ON work_logs(created_at);
@@ -1520,10 +1565,10 @@ CREATE INDEX idx_escalations_from_user
 ON escalations(from_user_id);
 
 CREATE INDEX idx_escalations_to_user
-ON escalations(to_user_id);
+ON escalations(assigned_to);
 
 CREATE INDEX idx_escalations_created_at
-ON escalations(created_at);
+ON escalations(triggered_at);
 
 
 -- =========================================================
@@ -1591,7 +1636,7 @@ ON ticket_relations(relation_type);
 -- =========================================================
 
 CREATE INDEX idx_audit_logs_actor
-ON audit_logs(actor_id);
+ON audit_logs(actor_user_id);
 
 CREATE INDEX idx_audit_logs_entity
 ON audit_logs(entity_type, entity_id);

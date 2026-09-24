@@ -5,6 +5,8 @@ const {
   getTicketById,
   createTicket,
   updateTicketStatus,
+  confirmResolution,
+  reopenTicket,
 } = require("../controllers/ticket.controller");
 
 const authenticate = require("../middlewares/auth.middleware");
@@ -166,6 +168,9 @@ router.post(
  *             properties:
  *               status:
  *                 type: string
+ *                 enum: [NEW, TRIAGED, ASSIGNED, IN_PROGRESS, WAITING, RESOLVED, REOPENED, CLOSED]
+              reason:
+                type: string
  *     responses:
  *       200:
  *         description: Ticket status updated successfully
@@ -181,6 +186,20 @@ router.patch(
     "MANAGER"
   ),
   updateTicketStatus
+);
+
+router.post(
+  "/:id/confirm-resolution",
+  authenticate,
+  authorize("REPORTER"),
+  confirmResolution
+);
+
+router.post(
+  "/:id/reopen",
+  authenticate,
+  authorize("REPORTER"),
+  reopenTicket
 );
 
 module.exports = router;

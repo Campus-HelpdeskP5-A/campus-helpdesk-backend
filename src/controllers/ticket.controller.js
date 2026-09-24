@@ -4,17 +4,32 @@ const {
   canAccessTicket,
   getTicketAccessFilter,
 } = require("../utils/accessControl");
+const {
+  VALID_TICKET_STATUSES,
+  canTransition,
+  canRoleTransition,
+  getAllowedNextStatuses,
+} = require("../utils/ticketWorkflow");
+const {
+  getCanonicalPriority,
+} = require("../utils/priorityMatrix");
+const {
+  calculateSlaDueDates,
+} = require("../services/sla.service");
+const {
+  detectEmergency,
+} = require("../utils/emergency");
+const {
+  notifyStatusChanged,
+} = require("../services/notification.service");
+const {
+  writeAuditLog,
+} = require("../services/audit.service");
 
 const VALID_IMPACTS = ["LOW", "MEDIUM", "HIGH"];
 const VALID_URGENCIES = ["LOW", "MEDIUM", "HIGH"];
 
-const VALID_STATUSES = [
-  "OPEN",
-  "IN_PROGRESS",
-  "PENDING",
-  "RESOLVED",
-  "CLOSED",
-];
+const VALID_STATUSES = VALID_TICKET_STATUSES;
 
 /**
  * GET /api/tickets
@@ -305,6 +320,11 @@ const createTicket = async (req, res) => {
       });
     }
 
+    const emergency = detectEmergency({
+      title,
+      description,
+    });
+
     /**
      * The authenticated user becomes the reporter.
      */
@@ -379,7 +399,8 @@ const createTicket = async (req, res) => {
         pm.sla_profile_id,
         sp.name AS sla_profile_name,
         sp.response_target_minutes,
-        sp.resolution_target_minutes
+        sp.resolution_target_minutes,
+        sp.business_hours_id
 
       FROM priority_matrices pm
 
@@ -407,27 +428,22 @@ const createTicket = async (req, res) => {
     }
 
     const matrix = matrixResult.rows[0];
+    const calculatedPriority = getCanonicalPriority(
+      impact,
+      urgency
+    );
 
-    /**
-     * 4. Calculate SLA deadlines
-     *
-     * Current implementation:
-     * direct elapsed minutes.
-     *
-     * Business-hours-aware calculation
-     * will be handled in the SLA integration phase.
-     */
     const now = new Date();
-
-    const responseDueAt = new Date(
-      now.getTime() +
-        matrix.response_target_minutes * 60 * 1000
-    );
-
-    const resolutionDueAt = new Date(
-      now.getTime() +
-        matrix.resolution_target_minutes * 60 * 1000
-    );
+    const { responseDueAt, resolutionDueAt } =
+      await calculateSlaDueDates({
+        client,
+        businessHoursId: matrix.business_hours_id,
+        startDate: now,
+        responseTargetMinutes:
+          matrix.response_target_minutes,
+        resolutionTargetMinutes:
+          matrix.resolution_target_minutes,
+      });
 
     /**
      * 5. Generate reference number
@@ -508,14 +524,45 @@ const createTicket = async (req, res) => {
         description,
         impact,
         urgency,
-        matrix.priority,
-        "OPEN",
+        calculatedPriority,
+        "NEW",
         responseDueAt,
         resolutionDueAt,
       ]
     );
 
     const ticket = ticketResult.rows[0];
+
+    await client.query(
+      `
+      INSERT INTO ticket_sla_executions (
+        ticket_id,
+        sla_profile_id,
+        response_target_minutes,
+        resolution_target_minutes,
+        business_hours_id,
+        response_due_at,
+        resolution_due_at,
+        effective_from,
+        is_current,
+        reason,
+        created_by
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, $9, $10)
+      `,
+      [
+        ticket.ticket_id,
+        matrix.sla_profile_id,
+        matrix.response_target_minutes,
+        matrix.resolution_target_minutes,
+        matrix.business_hours_id,
+        responseDueAt,
+        resolutionDueAt,
+        now,
+        "Ticket created",
+        req.user.user_id,
+      ]
+    );
 
     /**
      * 7. Create business event
@@ -561,7 +608,7 @@ const createTicket = async (req, res) => {
       [
         ticket.ticket_id,
         null,
-        "OPEN",
+        "NEW",
         req.user.user_id,
         "Ticket created",
       ]
@@ -574,7 +621,8 @@ const createTicket = async (req, res) => {
       message: "Ticket created successfully",
       data: {
         ticket,
-        priority: matrix.priority,
+        emergency,
+        priority: calculatedPriority,
         sla: {
           sla_profile_id:
             matrix.sla_profile_id,
@@ -636,7 +684,10 @@ const updateTicketStatus = async (req, res) => {
 
   try {
     const { id } = req.params;
-    const { status } = req.body;
+    const {
+      status,
+      reason,
+    } = req.body;
 
     /**
      * 1. Validate status
@@ -704,6 +755,18 @@ const updateTicketStatus = async (req, res) => {
       });
     }
 
+    if (
+      status === "CLOSED" &&
+      ticket.status === "RESOLVED" &&
+      process.env.REQUIRE_REPORTER_CONFIRMATION !== "false"
+    ) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "The reporter must confirm resolution before the ticket can be closed",
+      });
+    }
+
     /**
      * 5. Prevent duplicate status transition
      */
@@ -712,6 +775,23 @@ const updateTicketStatus = async (req, res) => {
         success: false,
         message:
           `Ticket is already in ${status} status`,
+      });
+    }
+
+    if (!canTransition(ticket.status, status)) {
+      return res.status(409).json({
+        success: false,
+        message:
+          `Transition from ${ticket.status} to ${status} is not allowed`,
+        allowed_next_statuses: getAllowedNextStatuses(ticket.status),
+      });
+    }
+
+    if (!canRoleTransition(req.user.role, ticket.status, status)) {
+      return res.status(403).json({
+        success: false,
+        message:
+          `${req.user.role} cannot transition ${ticket.status} to ${status}`,
       });
     }
 
@@ -733,11 +813,7 @@ const updateTicketStatus = async (req, res) => {
      */
     if (
       !firstResponseAt &&
-      [
-        "IN_PROGRESS",
-        "RESOLVED",
-        "CLOSED",
-      ].includes(status)
+      status === "IN_PROGRESS"
     ) {
       firstResponseAt = now;
     }
@@ -760,6 +836,11 @@ const updateTicketStatus = async (req, res) => {
       !closedAt
     ) {
       closedAt = now;
+    }
+
+    if (status === "REOPENED") {
+      resolvedAt = null;
+      closedAt = null;
     }
 
     /**
@@ -805,7 +886,7 @@ const updateTicketStatus = async (req, res) => {
         ticket.status,
         status,
         req.user.user_id,
-        "Ticket status updated",
+        reason || "Ticket status updated",
       ]
     );
 
@@ -829,11 +910,40 @@ const updateTicketStatus = async (req, res) => {
         JSON.stringify({
           old_status: ticket.status,
           new_status: status,
+          reason: reason || "Ticket status updated",
         }),
       ]
     );
 
+    await writeAuditLog({
+      client,
+      actorUserId: req.user.user_id,
+      action: "TICKET_STATUS_CHANGED",
+      entityType: "TICKET",
+      entityId: id,
+      oldValues: { status: ticket.status },
+      newValues: { status },
+      ipAddress: req.ip,
+    });
+
     await client.query("COMMIT");
+
+    if (ticket.reporter_id) {
+      try {
+        await notifyStatusChanged({
+          recipientUserId: ticket.reporter_id,
+          ticketId: id,
+          referenceNumber: ticket.reference_number,
+          oldStatus: ticket.status,
+          newStatus: status,
+        });
+      } catch (notificationError) {
+        console.error(
+          "Status notification error:",
+          notificationError
+        );
+      }
+    }
 
     return res.status(200).json({
       success: true,
@@ -859,9 +969,290 @@ const updateTicketStatus = async (req, res) => {
   }
 };
 
+/**
+ * POST /api/tickets/:id/confirm-resolution
+ *
+ * A reporter confirms a resolved ticket and closes it.
+ */
+const confirmResolution = async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const { id } = req.params;
+
+    const ticketResult = await client.query(
+      `
+      SELECT ticket_id, reporter_id, reference_number, status
+      FROM tickets
+      WHERE ticket_id = $1
+      `,
+      [id]
+    );
+
+    if (ticketResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Ticket not found",
+      });
+    }
+
+    const ticket = ticketResult.rows[0];
+
+    if (ticket.reporter_id !== req.user.user_id) {
+      return res.status(403).json({
+        success: false,
+        message: "Only the ticket reporter can confirm resolution",
+      });
+    }
+
+    if (ticket.status !== "RESOLVED") {
+      return res.status(409).json({
+        success: false,
+        message: "Only resolved tickets can be confirmed",
+      });
+    }
+
+    await client.query("BEGIN");
+
+    const result = await client.query(
+      `
+      UPDATE tickets
+      SET status = 'CLOSED', closed_at = NOW(), updated_at = NOW()
+      WHERE ticket_id = $1
+      RETURNING *
+      `,
+      [id]
+    );
+
+    await client.query(
+      `
+      INSERT INTO status_histories (
+        ticket_id, old_status, new_status, changed_by, reason
+      )
+      VALUES ($1, 'RESOLVED', 'CLOSED', $2, $3)
+      `,
+      [id, req.user.user_id, "Resolution confirmed by reporter"]
+    );
+
+    await client.query(
+      `
+      INSERT INTO ticket_events (
+        ticket_id, event_type, actor_user_id, event_data
+      )
+      VALUES ($1, 'STATUS_CHANGED', $2, $3::jsonb)
+      `,
+      [
+        id,
+        req.user.user_id,
+        JSON.stringify({
+          old_status: "RESOLVED",
+          new_status: "CLOSED",
+          reason: "Resolution confirmed by reporter",
+        }),
+      ]
+    );
+
+    await writeAuditLog({
+      client,
+      actorUserId: req.user.user_id,
+      action: "TICKET_STATUS_CHANGED",
+      entityType: "TICKET",
+      entityId: id,
+      oldValues: { status: "RESOLVED" },
+      newValues: { status: "CLOSED" },
+      ipAddress: req.ip,
+    });
+
+    await client.query("COMMIT");
+
+    try {
+      await notifyStatusChanged({
+        recipientUserId: req.user.user_id,
+        ticketId: id,
+        referenceNumber: ticket.reference_number,
+        oldStatus: "RESOLVED",
+        newStatus: "CLOSED",
+      });
+    } catch (notificationError) {
+      console.error("Confirmation notification error:", notificationError);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Resolution confirmed successfully",
+      data: result.rows[0],
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("Confirm resolution error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to confirm resolution",
+    });
+  } finally {
+    client.release();
+  }
+};
+
+/**
+ * POST /api/tickets/:id/reopen
+ *
+ * A reporter can reopen a resolved ticket during the configured window.
+ */
+const reopenTicket = async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const { id } = req.params;
+    const reopenWindowDays = Number(
+      process.env.TICKET_REOPEN_WINDOW_DAYS || 7
+    );
+
+    const ticketResult = await client.query(
+      `
+      SELECT ticket_id, reporter_id, reference_number, status, resolved_at
+      FROM tickets
+      WHERE ticket_id = $1
+      `,
+      [id]
+    );
+
+    if (ticketResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Ticket not found",
+      });
+    }
+
+    const ticket = ticketResult.rows[0];
+
+    if (ticket.reporter_id !== req.user.user_id) {
+      return res.status(403).json({
+        success: false,
+        message: "Only the ticket reporter can reopen this ticket",
+      });
+    }
+
+    if (!["RESOLVED", "CLOSED"].includes(ticket.status)) {
+      return res.status(409).json({
+        success: false,
+        message: "Only resolved or closed tickets can be reopened",
+      });
+    }
+
+    const oldStatus = ticket.status;
+
+    const resolvedAt = ticket.resolved_at
+      ? new Date(ticket.resolved_at).getTime()
+      : NaN;
+    const windowMilliseconds =
+      reopenWindowDays * 24 * 60 * 60 * 1000;
+
+    if (
+      !Number.isFinite(resolvedAt) ||
+      Date.now() - resolvedAt > windowMilliseconds
+    ) {
+      return res.status(409).json({
+        success: false,
+        message: "The ticket reopening period has expired",
+        reopening_period_days: reopenWindowDays,
+      });
+    }
+
+    await client.query("BEGIN");
+
+    const result = await client.query(
+      `
+      UPDATE tickets
+      SET status = 'REOPENED', resolved_at = NULL, closed_at = NULL, updated_at = NOW()
+      WHERE ticket_id = $1
+      RETURNING *
+      `,
+      [id]
+    );
+
+    await client.query(
+      `
+      INSERT INTO status_histories (
+        ticket_id, old_status, new_status, changed_by, reason
+      )
+      VALUES ($1, $2, 'REOPENED', $3, $4)
+      `,
+      [
+        id,
+        oldStatus,
+        req.user.user_id,
+        req.body.reason || "Ticket reopened by reporter",
+      ]
+    );
+
+    await client.query(
+      `
+      INSERT INTO ticket_events (
+        ticket_id, event_type, actor_user_id, event_data
+      )
+      VALUES ($1, 'REOPENED', $2, $3::jsonb)
+      `,
+      [
+        id,
+        req.user.user_id,
+        JSON.stringify({
+          old_status: oldStatus,
+          new_status: "REOPENED",
+          reason: req.body.reason || "Ticket reopened by reporter",
+        }),
+      ]
+    );
+
+    await writeAuditLog({
+      client,
+      actorUserId: req.user.user_id,
+      action: "TICKET_STATUS_CHANGED",
+      entityType: "TICKET",
+      entityId: id,
+      oldValues: { status: oldStatus },
+      newValues: { status: "REOPENED" },
+      ipAddress: req.ip,
+    });
+
+    await client.query("COMMIT");
+
+    try {
+      await notifyStatusChanged({
+        recipientUserId: req.user.user_id,
+        ticketId: id,
+        referenceNumber: ticket.reference_number,
+        oldStatus,
+        newStatus: "REOPENED",
+      });
+    } catch (notificationError) {
+      console.error("Reopen notification error:", notificationError);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Ticket reopened successfully",
+      data: result.rows[0],
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("Reopen ticket error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to reopen ticket",
+    });
+  } finally {
+    client.release();
+  }
+};
+
 module.exports = {
   getTickets,
   getTicketById,
   createTicket,
   updateTicketStatus,
+  confirmResolution,
+  reopenTicket,
 };

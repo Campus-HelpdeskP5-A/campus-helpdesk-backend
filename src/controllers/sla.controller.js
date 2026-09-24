@@ -19,6 +19,10 @@ const VALID_PRIORITIES = [
   "CRITICAL",
 ];
 
+const {
+  getCanonicalPriority,
+} = require("../utils/priorityMatrix");
+
 const validateDays = (days) => {
   if (!Array.isArray(days) || days.length !== 7) {
     return "days must contain exactly 7 day definitions";
@@ -1175,6 +1179,20 @@ const createPriorityMatrix = async (
       });
     }
 
+    const expectedPriority = getCanonicalPriority(
+      normalizedImpact,
+      normalizedUrgency
+    );
+
+    if (expectedPriority !== normalizedPriority) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Priority does not match the configured impact and urgency matrix",
+        expected_priority: expectedPriority,
+      });
+    }
+
     const sla = await pool.query(
       `
       SELECT
@@ -1361,6 +1379,20 @@ const updatePriorityMatrix = async (
         success: false,
         message:
           "Invalid priority",
+      });
+    }
+
+    const expectedPriority = getCanonicalPriority(
+      finalImpact,
+      finalUrgency
+    );
+
+    if (expectedPriority !== finalPriority) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Priority does not match the configured impact and urgency matrix",
+        expected_priority: expectedPriority,
       });
     }
 
