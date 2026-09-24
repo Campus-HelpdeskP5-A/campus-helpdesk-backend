@@ -42,6 +42,7 @@ app.use((req, res, next) => {
     "http://localhost:5173",
     "http://127.0.0.1:5000",
     "http://127.0.0.1:5173",
+    "https://campus-helpdesk-frontend-ewvvls3id-campus-helpdesk-p5-a.vercel.app",
   ];
 
   const configuredOrigins = String(
