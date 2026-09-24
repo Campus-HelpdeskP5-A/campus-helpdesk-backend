@@ -1,3 +1,4 @@
+
 const pool = require("../config/database");
 
 const {
@@ -578,13 +579,16 @@ const createComment = async (
           ticket_id,
           user_id,
           body,
-          is_internal
+          visibility
         )
         VALUES (
           $1,
           $2,
           $3,
-          $4
+          CASE
+            WHEN $4 THEN 'INTERNAL'
+            ELSE 'REPORTER_VISIBLE'
+          END::comment_visibility
         )
         RETURNING
           comment_id,
@@ -775,7 +779,7 @@ const updateComment = async (
 ) => {
   try {
     const { id } = req.params;
-    const { body } = req.body;
+    const { body, is_internal } = req.body;
 
     if (
       !body ||
@@ -785,6 +789,34 @@ const updateComment = async (
         success: false,
         message:
           "body is required",
+      });
+    }
+
+    /**
+     * Validate is_internal when provided.
+     */
+    if (
+      is_internal !== undefined &&
+      typeof is_internal !== "boolean"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "is_internal must be a boolean",
+      });
+    }
+
+    /**
+     * Reporter cannot make a comment internal.
+     */
+    if (
+      req.user.role === "REPORTER" &&
+      is_internal === true
+    ) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Reporters cannot make comments internal",
       });
     }
 
@@ -858,9 +890,13 @@ const updateComment = async (
 
         SET
           body = $1,
+          visibility = COALESCE(
+            $2::comment_visibility,
+            visibility
+          ),
           updated_at = NOW()
 
-        WHERE comment_id = $2
+        WHERE comment_id = $3
 
         RETURNING
           comment_id,
@@ -873,6 +909,11 @@ const updateComment = async (
         `,
         [
           body.trim(),
+          is_internal === undefined
+            ? null
+            : is_internal
+              ? "INTERNAL"
+              : "REPORTER_VISIBLE",
           id,
         ]
       );
@@ -1070,3 +1111,4 @@ module.exports = {
   updateComment,
   deleteComment,
 };
+

@@ -339,7 +339,7 @@ const getTeamDashboard = async (req, res) => {
           'TECHNICIAN'
         )
 
-        AND u.is_active = true
+        AND u.account_status = 'ACTIVE'
 
       GROUP BY
         a.assigned_to,
@@ -452,7 +452,141 @@ const getTeamDashboard = async (req, res) => {
   }
 };
 
+const getReporterDashboard = async (req, res) => {
+  try {
+    const userId = req.user.user_id;
+
+    const [ticketStats, recentTickets] = await Promise.all([
+      pool.query(
+        `
+        SELECT
+          COUNT(*)::int AS total,
+          COUNT(*) FILTER (WHERE status = 'OPEN')::int AS open,
+          COUNT(*) FILTER (WHERE status = 'IN_PROGRESS')::int AS in_progress,
+          COUNT(*) FILTER (WHERE status = 'PENDING')::int AS pending,
+          COUNT(*) FILTER (WHERE status = 'RESOLVED')::int AS resolved,
+          COUNT(*) FILTER (WHERE status = 'CLOSED')::int AS closed
+        FROM tickets
+        WHERE reporter_id = $1
+        `,
+        [userId]
+      ),
+      pool.query(
+        `
+        SELECT
+          t.ticket_id,
+          t.reference_number,
+          t.title,
+          t.status,
+          t.priority,
+          t.created_at
+        FROM tickets t
+        WHERE t.reporter_id = $1
+        ORDER BY t.created_at DESC
+        LIMIT 10
+        `,
+        [userId]
+      ),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        tickets: ticketStats.rows[0],
+        recent_tickets: recentTickets.rows,
+      },
+    });
+  } catch (error) {
+    console.error("Get reporter dashboard error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to retrieve reporter dashboard",
+    });
+  }
+};
+
+const getAuditorDashboard = async (req, res) => {
+  try {
+    const [ticketStats, userStats, auditStats, recentLogs] = await Promise.all([
+      pool.query(
+        `
+        SELECT
+          COUNT(*)::int AS total,
+          COUNT(*) FILTER (WHERE status = 'OPEN')::int AS open,
+          COUNT(*) FILTER (WHERE status = 'IN_PROGRESS')::int AS in_progress,
+          COUNT(*) FILTER (WHERE status = 'PENDING')::int AS pending,
+          COUNT(*) FILTER (WHERE status = 'RESOLVED')::int AS resolved,
+          COUNT(*) FILTER (WHERE status = 'CLOSED')::int AS closed
+        FROM tickets
+        `
+      ),
+      pool.query(
+        `
+        SELECT
+          COUNT(*)::int AS total_users,
+          COUNT(*) FILTER (WHERE account_status = 'ACTIVE')::int AS active_users,
+          COUNT(*) FILTER (WHERE role = 'MANAGER')::int AS managers,
+          COUNT(*) FILTER (WHERE role = 'TECHNICIAN')::int AS technicians
+        FROM users
+        `
+      ),
+      pool.query(
+        `
+        SELECT
+          COUNT(*)::int AS total_logs
+        FROM audit_logs
+        `
+      ),
+      pool.query(
+        `
+        SELECT
+          a.audit_log_id,
+          a.entity_type,
+          a.entity_id,
+          a.action,
+          a.created_at,
+          actor.full_name AS actor_name
+        FROM audit_logs a
+        LEFT JOIN users actor ON actor.user_id = a.actor_user_id
+        ORDER BY a.created_at DESC
+        LIMIT 10
+        `
+      ),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        tickets: ticketStats.rows[0],
+        users: userStats.rows[0],
+        audit_logs: auditStats.rows[0],
+        recent_changes: recentLogs.rows,
+      },
+    });
+  } catch (error) {
+    console.error("Get auditor dashboard error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to retrieve auditor dashboard",
+    });
+  }
+};
+
+const getAgentDashboard = async (req, res) => {
+  return getTeamDashboard(req, res);
+};
+
+const getTechnicianDashboard = async (req, res) => {
+  return getTeamDashboard(req, res);
+};
+
 module.exports = {
   getDashboard,
   getTeamDashboard,
+  getReporterDashboard,
+  getAuditorDashboard,
+  getAgentDashboard,
+  getTechnicianDashboard,
 };

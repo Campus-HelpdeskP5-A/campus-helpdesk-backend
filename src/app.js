@@ -1,3 +1,4 @@
+
 const express = require("express");
 const pool = require("./config/database");
 
@@ -36,10 +37,19 @@ const app = express();
  * CORS
  */
 app.use((req, res, next) => {
-  res.header(
-    "Access-Control-Allow-Origin",
-    "https://campus-helpdesk-frontend.vercel.app"
-  );
+  const allowedOrigins = [
+    "http://localhost:5000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5000",
+    "http://127.0.0.1:5173",
+    "https://campus-helpdesk-frontend.vercel.app",
+  ];
+
+  const requestOrigin = req.headers.origin;
+
+  if (allowedOrigins.includes(requestOrigin)) {
+    res.header("Access-Control-Allow-Origin", requestOrigin);
+  }
 
   res.header(
     "Access-Control-Allow-Methods",
@@ -73,12 +83,9 @@ app.get("/api-docs.json", (req, res) => {
 app.use(
   "/api-docs",
   swaggerUi.serve,
-  swaggerUi.setup(null, {
+  swaggerUi.setup(swaggerSpec, {
     explorer: true,
     customSiteTitle: "Campus Helpdesk API Documentation",
-    swaggerOptions: {
-      url: "/api-docs.json",
-    },
   })
 );
 
@@ -158,3 +165,4 @@ app.get(
 );
 
 module.exports = app;
+

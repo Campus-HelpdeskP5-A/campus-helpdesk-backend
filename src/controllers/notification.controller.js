@@ -134,7 +134,7 @@ const createNotification = async (req, res) => {
       `
       SELECT
         user_id,
-        is_active
+        (account_status = 'ACTIVE') AS is_active
       FROM users
       WHERE user_id = $1
       `,

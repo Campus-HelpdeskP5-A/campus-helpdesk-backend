@@ -69,6 +69,11 @@ const getAuditLogs = async (req, res) => {
         ? `WHERE ${conditions.join(" AND ")}`
         : "";
 
+    const totalResult = await pool.query(
+      `SELECT COUNT(*)::int AS total FROM audit_logs a ${whereClause}`,
+      values
+    );
+
     values.push(parsedLimit);
     const limitPlaceholder = `$${values.length}`;
 
@@ -107,6 +112,7 @@ const getAuditLogs = async (req, res) => {
         limit: parsedLimit,
         offset: parsedOffset,
         count: result.rows.length,
+        total: totalResult.rows[0].total,
       },
     });
   } catch (error) {

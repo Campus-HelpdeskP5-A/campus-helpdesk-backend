@@ -266,7 +266,7 @@ const createAssignment = async (req, res) => {
           full_name,
           email,
           role,
-          is_active
+          (account_status = 'ACTIVE') AS is_active
         FROM users
         WHERE user_id = $1
         `,
@@ -379,6 +379,7 @@ const createAssignment = async (req, res) => {
           assigned_to,
           assigned_team_id,
           assigned_by,
+          assigned_at,
           reason,
           is_current
         )
@@ -387,6 +388,7 @@ const createAssignment = async (req, res) => {
           $2,
           $3,
           $4,
+          NOW(),
           $5,
           true
         )
@@ -672,7 +674,7 @@ const updateAssignment = async (req, res) => {
           full_name,
           email,
           role,
-          is_active
+          (account_status = 'ACTIVE') AS is_active
         FROM users
         WHERE user_id = $1
         `,
@@ -783,6 +785,7 @@ const updateAssignment = async (req, res) => {
         assigned_to,
         assigned_team_id,
         assigned_by,
+        assigned_at,
         reason,
         is_current
       )
@@ -791,6 +794,7 @@ const updateAssignment = async (req, res) => {
         $2,
         $3,
         $4,
+        NOW(),
         $5,
         true
       )

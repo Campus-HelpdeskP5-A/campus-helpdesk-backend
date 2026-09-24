@@ -365,6 +365,36 @@ const createAttachment = async (
     }
 
     /**
+     * file_uuid must be a real UUID — invalid input
+     * is a client error (400), never a 500.
+     */
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        String(file_uuid)
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "file_uuid must be a valid UUID",
+      });
+    }
+
+    /**
+     * file_uuid must be a real UUID — invalid input
+     * is a client error (400), never a 500.
+     */
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        String(file_uuid)
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "file_uuid must be a valid UUID",
+      });
+    }
+
+    /**
      * Auditor is read-only.
      */
     if (req.user.role === "AUDITOR") {
@@ -535,7 +565,9 @@ const createAttachment = async (
           file_name,
           mime_type,
           file_size,
-          storage_path
+          storage_path,
+          submitted_at,
+          visibility
         )
 
         VALUES (
@@ -545,7 +577,9 @@ const createAttachment = async (
           $4,
           $5,
           $6,
-          $7
+          $7,
+          NOW(),
+          'REPORTER_VISIBLE'
         )
 
         RETURNING

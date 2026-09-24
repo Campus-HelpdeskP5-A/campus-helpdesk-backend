@@ -1,3 +1,4 @@
+
 const productionUrl =
   process.env.API_BASE_URL ||
   "https://campus-helpdesk-api-campus-helpdesk-p5-a.vercel.app";
@@ -219,7 +220,8 @@ const openapiDocument = {
           },
           description: {
             type: "string",
-            example: "The projector in room 204 is not displaying anything.",
+            example:
+              "The projector in room 204 is not displaying anything.",
           },
           status: {
             type: "string",
@@ -355,9 +357,69 @@ const openapiDocument = {
         tags: ["Users"],
         summary: "Create a user",
         security: [{ bearerAuth: [] }],
+
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: [
+                  "email",
+                  "password",
+                  "full_name",
+                  "role",
+                ],
+                properties: {
+                  email: {
+                    type: "string",
+                    format: "email",
+                    example: "test.technician@bua.edu.eg",
+                  },
+                  password: {
+                    type: "string",
+                    format: "password",
+                    example: "Test12345!",
+                  },
+                  full_name: {
+                    type: "string",
+                    example: "Test Technician",
+                  },
+                  role: {
+                    type: "string",
+                    enum: [
+                      "REPORTER",
+                      "AGENT",
+                      "TECHNICIAN",
+                      "MANAGER",
+                      "AUDITOR",
+                    ],
+                    example: "TECHNICIAN",
+                  },
+                },
+              },
+            },
+          },
+        },
+
         responses: {
           201: {
             description: "User created successfully",
+          },
+          400: {
+            description: "Invalid user data",
+          },
+          401: {
+            description: "Authentication required",
+          },
+          403: {
+            description: "Insufficient permissions",
+          },
+          409: {
+            description: "User already exists",
+          },
+          500: {
+            description: "Server error",
           },
         },
       },
@@ -431,6 +493,56 @@ const openapiDocument = {
         responses: {
           200: {
             description: "User status updated successfully",
+          },
+        },
+      },
+    },
+
+    /*
+     * =========================
+     * USER APPROVAL
+     * =========================
+     */
+
+    "/api/users/{id}/approve": {
+      patch: {
+        tags: ["Users"],
+        summary: "Approve a pending Technician or Manager account",
+        description:
+          "Only a Manager can approve a pending Technician or Manager account.",
+        security: [{ bearerAuth: [] }],
+
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            description: "User ID to approve",
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
+          },
+        ],
+
+        responses: {
+          200: {
+            description: "User approved successfully",
+          },
+          400: {
+            description: "User cannot be approved",
+          },
+          401: {
+            description: "Authentication required",
+          },
+          403: {
+            description: "Only Managers can approve users",
+          },
+          404: {
+            description: "User not found",
+          },
+          500: {
+            description: "Server error",
           },
         },
       },
@@ -1934,11 +2046,74 @@ const openapiDocument = {
     "/api/dashboard": {
       get: {
         tags: ["Dashboard"],
-        summary: "Get dashboard data",
+        summary: "Get manager dashboard data",
         security: [{ bearerAuth: [] }],
         responses: {
           200: {
-            description: "Dashboard data retrieved successfully",
+            description: "Manager dashboard data retrieved successfully",
+          },
+          401: {
+            description: "Authentication required",
+          },
+          403: {
+            description: "Manager role required",
+          },
+        },
+      },
+    },
+
+    "/api/dashboard/manager": {
+      get: {
+        tags: ["Dashboard"],
+        summary: "Get manager dashboard data",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: {
+            description: "Manager dashboard data retrieved successfully",
+          },
+          401: {
+            description: "Authentication required",
+          },
+          403: {
+            description: "Manager role required",
+          },
+        },
+      },
+    },
+
+    "/api/dashboard/agent": {
+      get: {
+        tags: ["Dashboard"],
+        summary: "Get agent dashboard data",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: {
+            description: "Agent dashboard data retrieved successfully",
+          },
+          401: {
+            description: "Authentication required",
+          },
+          403: {
+            description: "Agent role required",
+          },
+        },
+      },
+    },
+
+    "/api/dashboard/technician": {
+      get: {
+        tags: ["Dashboard"],
+        summary: "Get technician dashboard data",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: {
+            description: "Technician dashboard data retrieved successfully",
+          },
+          401: {
+            description: "Authentication required",
+          },
+          403: {
+            description: "Technician role required",
           },
         },
       },
@@ -1947,11 +2122,55 @@ const openapiDocument = {
     "/api/dashboard/team": {
       get: {
         tags: ["Dashboard"],
-        summary: "Get team dashboard data",
+        summary: "Get team dashboard data (compatibility route)",
         security: [{ bearerAuth: [] }],
         responses: {
           200: {
             description: "Team dashboard data retrieved successfully",
+          },
+          401: {
+            description: "Authentication required",
+          },
+          403: {
+            description: "Manager, Agent, or Technician role required",
+          },
+        },
+      },
+    },
+
+    "/api/dashboard/reporter": {
+      get: {
+        tags: ["Dashboard"],
+        summary: "Get reporter dashboard data",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: {
+            description: "Reporter dashboard data retrieved successfully",
+          },
+          401: {
+            description: "Authentication required",
+          },
+          403: {
+            description: "Reporter role required",
+          },
+        },
+      },
+    },
+
+    "/api/dashboard/auditor": {
+      get: {
+        tags: ["Dashboard"],
+        summary: "Get auditor dashboard data",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: {
+            description: "Auditor dashboard data retrieved successfully",
+          },
+          401: {
+            description: "Authentication required",
+          },
+          403: {
+            description: "Auditor role required",
           },
         },
       },
@@ -1960,3 +2179,4 @@ const openapiDocument = {
 };
 
 module.exports = openapiDocument;
+

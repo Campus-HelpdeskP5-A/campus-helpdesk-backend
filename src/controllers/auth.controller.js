@@ -1,6 +1,10 @@
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const pool = require("../config/database");
+const {
+  ACCOUNT_STATUS,
+  isActiveStatus,
+} = require("../utils/accountStatus");
 
 const register = async (req, res) => {
   try {
@@ -57,15 +61,18 @@ const register = async (req, res) => {
         email,
         password_hash,
         full_name,
-        role
+        role,
+        requested_role,
+        account_status
       )
-      VALUES ($1, $2, $3, 'REPORTER')
+      VALUES ($1, $2, $3, 'REPORTER', 'REPORTER', $4)
       RETURNING
         user_id,
         email,
         full_name,
         role,
-        is_active,
+        (account_status = 'ACTIVE') AS is_active,
+        account_status,
         approved_by,
         approved_at,
         created_by,
@@ -77,6 +84,7 @@ const register = async (req, res) => {
         normalizedEmail,
         passwordHash,
         full_name.trim(),
+        ACCOUNT_STATUS.ACTIVE,
       ]
     );
 
@@ -134,7 +142,7 @@ const login = async (req, res) => {
         password_hash,
         full_name,
         role,
-        is_active
+        account_status
       FROM users
       WHERE LOWER(email) = LOWER($1)
       `,
@@ -150,7 +158,7 @@ const login = async (req, res) => {
 
     const user = result.rows[0];
 
-    if (!user.is_active) {
+    if (!isActiveStatus(user.account_status)) {
       return res.status(403).json({
         success: false,
         message: "User account is inactive",
@@ -191,7 +199,7 @@ const login = async (req, res) => {
           email: user.email,
           full_name: user.full_name,
           role: user.role,
-          is_active: user.is_active,
+          is_active: user.account_status === "ACTIVE",
         },
         token,
       },
@@ -215,7 +223,8 @@ const getMe = async (req, res) => {
         email,
         full_name,
         role,
-        is_active,
+        (account_status = 'ACTIVE') AS is_active,
+        account_status,
         approved_by,
         approved_at,
         created_by,

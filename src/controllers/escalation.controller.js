@@ -501,7 +501,7 @@ const createEscalation = async (
             full_name,
             email,
             role,
-            is_active
+            (account_status = 'ACTIVE') AS is_active
           FROM users
           WHERE user_id = $1
           `,
@@ -603,6 +603,8 @@ const createEscalation = async (
           severity,
           assigned_to,
           assigned_team_id,
+          from_user_id,
+          status,
           reason
         )
         VALUES (
@@ -611,7 +613,9 @@ const createEscalation = async (
           $3,
           $4,
           $5,
-          $6
+          $6,
+          'OPEN',
+          $7
         )
         RETURNING
           escalation_id,
@@ -621,6 +625,8 @@ const createEscalation = async (
           triggered_at,
           assigned_to,
           assigned_team_id,
+          from_user_id,
+          status,
           reason,
           resolved_at
         `,
@@ -630,6 +636,7 @@ const createEscalation = async (
           severity.trim(),
           assigned_to,
           assigned_team_id,
+          req.user.user_id,
           reason
             ? reason.trim()
             : null,
@@ -901,7 +908,9 @@ const resolveEscalation = async (
     const result = await client.query(
       `
       UPDATE escalations
-      SET resolved_at = NOW()
+      SET
+        resolved_at = NOW(),
+        status = 'RESOLVED'
       WHERE escalation_id = $1
       RETURNING
         escalation_id,
@@ -911,6 +920,8 @@ const resolveEscalation = async (
         triggered_at,
         assigned_to,
         assigned_team_id,
+        from_user_id,
+        status,
         reason,
         resolved_at
       `,

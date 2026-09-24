@@ -94,7 +94,7 @@ const getTicketPredictions = async (
         p.prediction_type,
         p.predicted_value,
         p.confidence,
-        p.prediction_timestamp,
+        p.created_at AS prediction_timestamp,
 
         p.decision,
         p.override_value,
@@ -119,7 +119,7 @@ const getTicketPredictions = async (
       WHERE p.ticket_id = $1
 
       ORDER BY
-        p.prediction_timestamp DESC
+        p.created_at DESC
       `,
       [ticketId]
     );
@@ -170,7 +170,7 @@ const getPredictionById = async (
         p.prediction_type,
         p.predicted_value,
         p.confidence,
-        p.prediction_timestamp,
+        p.created_at AS prediction_timestamp,
 
         p.decision,
         p.override_value,
@@ -418,7 +418,7 @@ const createPrediction = async (
         prediction_type,
         predicted_value,
         confidence,
-        prediction_timestamp,
+        created_at AS prediction_timestamp,
         decision,
         override_value,
         reviewed_by,
@@ -640,7 +640,7 @@ const reviewPrediction = async (
         prediction_type,
         predicted_value,
         confidence,
-        prediction_timestamp,
+        created_at AS prediction_timestamp,
         decision,
         override_value,
         reviewed_by,

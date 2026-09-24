@@ -1,3 +1,4 @@
+
 const express = require("express");
 
 const {
@@ -6,6 +7,7 @@ const {
   createUser,
   updateUser,
   updateUserStatus,
+  approveUser,
 } = require("../controllers/user.controller");
 
 const authenticate = require("../middlewares/auth.middleware");
@@ -245,4 +247,42 @@ router.patch(
   updateUserStatus
 );
 
+/**
+ * @swagger
+ * /api/users/{id}/approve:
+ *   patch:
+ *     summary: Approve a pending Technician or Manager account
+ *     tags:
+ *       - Users
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: User approved successfully
+ *       400:
+ *         description: User cannot be approved
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Only Managers can approve users
+ *       404:
+ *         description: User not found
+ *       500:
+ *         description: Server error
+ */
+router.patch(
+  "/:id/approve",
+  authenticate,
+  authorize("MANAGER"),
+  approveUser
+);
+
 module.exports = router;
+

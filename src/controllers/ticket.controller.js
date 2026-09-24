@@ -11,6 +11,7 @@ const VALID_URGENCIES = ["LOW", "MEDIUM", "HIGH"];
 const VALID_STATUSES = [
   "OPEN",
   "IN_PROGRESS",
+  "PENDING",
   "RESOLVED",
   "CLOSED",
 ];
