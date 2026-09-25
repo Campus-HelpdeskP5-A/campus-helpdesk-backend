@@ -1302,6 +1302,115 @@ const openapiDocument = {
       },
     },
 
+    "/api/attachments": {
+  post: {
+    tags: ["Attachments"],
+    summary: "Create attachment metadata",
+    description:
+      "Create attachment metadata for an existing ticket. The actual file upload and storage are handled separately.",
+    security: [{ bearerAuth: [] }],
+
+    requestBody: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+            required: [
+              "ticket_id",
+              "file_uuid",
+              "file_name",
+              "file_size",
+              "storage_path",
+            ],
+            properties: {
+              ticket_id: {
+                type: "string",
+                format: "uuid",
+                description: "Ticket ID",
+                example:
+                  "d68c8dcb-ffdc-513b-f84c-7e8cbdaa305f",
+              },
+
+              file_uuid: {
+                type: "string",
+                format: "uuid",
+                description: "Unique UUID of the uploaded file.",
+                example:
+                  "550e8400-e29b-41d4-a716-446655440000",
+              },
+
+              file_name: {
+                type: "string",
+                description: "Original file name.",
+                example: "screenshot.png",
+              },
+
+              mime_type: {
+                type: "string",
+                nullable: true,
+                description: "MIME type of the file.",
+                example: "image/png",
+              },
+
+              file_size: {
+                type: "integer",
+                minimum: 0,
+                description: "File size in bytes.",
+                example: 245678,
+              },
+
+              storage_path: {
+                type: "string",
+                description:
+                  "Path where the file is stored by the storage layer.",
+                example:
+                  "tickets/123/screenshot.png",
+              },
+            },
+          },
+
+          example: {
+            ticket_id:
+              "d68c8dcb-ffdc-513b-f84c-7e8cbdaa305f",
+            file_uuid:
+              "550e8400-e29b-41d4-a716-446655440000",
+            file_name: "screenshot.png",
+            mime_type: "image/png",
+            file_size: 245678,
+            storage_path:
+              "tickets/123/screenshot.png",
+          },
+        },
+      },
+    },
+
+    responses: {
+      201: {
+        description: "Attachment created successfully",
+      },
+      400: {
+        description: "Invalid attachment data",
+      },
+      401: {
+        description: "Authentication required",
+      },
+      403: {
+        description: "Not authorized to create attachment",
+      },
+      404: {
+        description: "Ticket not found",
+      },
+      409: {
+        description: "Attachment already exists",
+      },
+      500: {
+        description: "Server error",
+      },
+    },
+  },
+},
+
     "/api/attachments/{id}": {
       get: {
         tags: ["Attachments"],

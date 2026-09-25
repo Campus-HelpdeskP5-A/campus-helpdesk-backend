@@ -103,6 +103,7 @@ const getTickets = async (req, res) => {
       }
 
       values.push(status);
+
       conditions.push(
         `t.status = $${values.length}`
       );
@@ -121,6 +122,7 @@ const getTickets = async (req, res) => {
       }
 
       values.push(priority);
+
       conditions.push(
         `t.priority = $${values.length}`
       );
@@ -131,6 +133,7 @@ const getTickets = async (req, res) => {
      */
     if (category_id) {
       values.push(category_id);
+
       conditions.push(
         `t.category_id = $${values.length}`
       );
@@ -140,16 +143,18 @@ const getTickets = async (req, res) => {
      * Pagination
      */
     values.push(parsedLimit);
+
     const limitPlaceholder =
       `$${values.length}`;
 
     values.push(parsedOffset);
+
     const offsetPlaceholder =
       `$${values.length}`;
 
     const result = await pool.query(
       `
-      SELECT
+      SELECT 
         t.ticket_id,
         t.reference_number,
 
@@ -256,7 +261,7 @@ const getTicketById = async (req, res) => {
 
     const result = await pool.query(
       `
-      SELECT
+      SELECT 
         t.ticket_id,
         t.reference_number,
 
@@ -346,6 +351,7 @@ const createTicket = async (req, res) => {
       description,
       impact,
       urgency,
+      attachments = [],
     } = req.body;
 
     if (
@@ -379,6 +385,16 @@ const createTicket = async (req, res) => {
       });
     }
 
+    /**
+     * Validate attachments format before opening transaction
+     */
+    if (!Array.isArray(attachments)) {
+      return res.status(400).json({
+        success: false,
+        message: "attachments must be an array",
+      });
+    }
+
     const emergency = detectEmergency({
       title,
       description,
@@ -396,7 +412,7 @@ const createTicket = async (req, res) => {
      */
     const categoryResult = await client.query(
       `
-      SELECT
+      SELECT 
         category_id,
         category_name,
         is_active
@@ -429,7 +445,7 @@ const createTicket = async (req, res) => {
      */
     const locationResult = await client.query(
       `
-      SELECT
+      SELECT 
         location_id,
         building,
         room_code
@@ -453,7 +469,7 @@ const createTicket = async (req, res) => {
      */
     const matrixResult = await client.query(
       `
-      SELECT
+      SELECT 
         pm.priority,
         pm.sla_profile_id,
         sp.name AS sla_profile_name,
@@ -518,7 +534,7 @@ const createTicket = async (req, res) => {
      */
     const referenceResult =
       await client.query(`
-      SELECT
+      SELECT 
         COALESCE(
           MAX(
             CAST(
@@ -601,6 +617,130 @@ const createTicket = async (req, res) => {
     const ticket =
       ticketResult.rows[0];
 
+    /**
+     * 7. Save initial attachment metadata
+     *
+     * The actual file upload/storage is handled
+     * separately. This stores only the attachment
+     * metadata linked to the newly created ticket.
+     */
+    for (const attachment of attachments) {
+      const {
+        file_uuid,
+        file_name,
+        mime_type,
+        file_size,
+        storage_path,
+      } = attachment;
+
+      if (
+        !file_uuid ||
+        !file_name ||
+        file_size === undefined ||
+        file_size === null ||
+        !storage_path
+      ) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          success: false,
+          message:
+            "Each attachment requires file_uuid, file_name, file_size and storage_path",
+        });
+      }
+
+      if (
+        !Number.isInteger(Number(file_size)) ||
+        Number(file_size) < 0
+      ) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          success: false,
+          message:
+            "Attachment file_size must be a non-negative integer",
+        });
+      }
+
+      const fileUuidRegex =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+      if (!fileUuidRegex.test(file_uuid)) {
+        await client.query("ROLLBACK");
+
+        return res.status(400).json({
+          success: false,
+          message:
+            "Attachment file_uuid must be a valid UUID",
+        });
+      }
+
+      await client.query(
+        `
+        INSERT INTO attachments (
+          ticket_id,
+          uploaded_by,
+          file_uuid,
+          file_name,
+          mime_type,
+          file_size,
+          storage_path,
+          submitted_at,
+          visibility
+        )
+        VALUES (
+          $1,
+          $2,
+          $3,
+          $4,
+          $5,
+          $6,
+          $7,
+          NOW(),
+          'REPORTER_VISIBLE'
+        )
+        `,
+        [
+          ticket.ticket_id,
+          reporterId,
+          file_uuid,
+          file_name,
+          mime_type || null,
+          Number(file_size),
+          storage_path,
+        ]
+      );
+
+      await client.query(
+        `
+        INSERT INTO ticket_events (
+          ticket_id,
+          event_type,
+          actor_user_id,
+          event_data
+        )
+        VALUES ($1, $2, $3, $4)
+        `,
+        [
+          ticket.ticket_id,
+          "ATTACHMENT_ADDED",
+          reporterId,
+          JSON.stringify({
+            file_uuid,
+            file_name,
+            mime_type:
+              mime_type || null,
+            file_size:
+              Number(file_size),
+            storage_path,
+          }),
+        ]
+      );
+    }
+
+    /**
+     * 8. Create SLA execution
+     */
     await client.query(
       `
       INSERT INTO ticket_sla_executions (
@@ -645,7 +785,7 @@ const createTicket = async (req, res) => {
     );
 
     /**
-     * 7. Create business event
+     * 9. Create business event
      */
     await client.query(
       `
@@ -674,7 +814,7 @@ const createTicket = async (req, res) => {
     );
 
     /**
-     * 8. Create initial status history
+     * 10. Create initial status history
      */
     await client.query(
       `
@@ -707,6 +847,8 @@ const createTicket = async (req, res) => {
         emergency,
         priority:
           calculatedPriority,
+        attachments_count:
+          attachments.length,
         sla: {
           sla_profile_id:
             matrix.sla_profile_id,
@@ -740,7 +882,7 @@ const createTicket = async (req, res) => {
       return res.status(409).json({
         success: false,
         message:
-          "Ticket reference number already exists",
+          "Ticket reference number or attachment file UUID already exists",
       });
     }
 
