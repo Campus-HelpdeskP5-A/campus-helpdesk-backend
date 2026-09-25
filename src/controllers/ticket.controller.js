@@ -71,6 +71,10 @@ const getTickets = async (req, res) => {
       status,
       priority,
       category_id,
+      team_id,
+      assignee_id,
+      location_id,
+      due,
       limit = 100,
       offset = 0,
     } = req.query;
@@ -141,6 +145,37 @@ const getTickets = async (req, res) => {
       );
     }
 
+    /** Filter by current support team assignment */
+    if (team_id) {
+      values.push(team_id);
+      conditions.push("EXISTS (SELECT 1 FROM assignments af WHERE af.ticket_id = t.ticket_id AND af.is_current = TRUE AND af.assigned_team_id = $" + values.length + ")");
+    }
+
+    /** Filter by current assignee */
+    if (assignee_id) {
+      values.push(assignee_id);
+      conditions.push("EXISTS (SELECT 1 FROM assignments af WHERE af.ticket_id = t.ticket_id AND af.is_current = TRUE AND af.assigned_to = $" + values.length + ")");
+    }
+
+    /** Filter by location */
+    if (location_id) {
+      values.push(location_id);
+      conditions.push("t.location_id = $" + values.length);
+    }
+
+    /** Filter by resolution due-time bucket */
+    if (due) {
+      if (!["overdue", "today", "upcoming"].includes(due)) {
+        return res.status(400).json({ success: false, message: "Invalid due value", allowed_values: ["overdue", "today", "upcoming"] });
+      }
+      if (due === "overdue") {
+        conditions.push("t.resolution_due_at < NOW() AND t.status NOT IN ('RESOLVED', 'CLOSED')");
+      } else if (due === "today") {
+        conditions.push("t.resolution_due_at >= CURRENT_DATE AND t.resolution_due_at < CURRENT_DATE + INTERVAL '1 day'");
+      } else {
+        conditions.push("t.resolution_due_at >= CURRENT_DATE + INTERVAL '1 day'");
+      }
+    }
     /**
      * Pagination
      */
@@ -175,6 +210,11 @@ const getTickets = async (req, res) => {
         t.asset_id,
         t.sla_profile_id,
 
+        assignment.assigned_to,
+        assignee.full_name AS assignee_name,
+        assignment.assigned_team_id,
+        assigned_team.team_name,
+
         t.title,
         t.description,
         t.impact,
@@ -202,6 +242,16 @@ const getTickets = async (req, res) => {
       JOIN locations l
         ON l.location_id = t.location_id
 
+      LEFT JOIN assignments assignment
+        ON assignment.ticket_id = t.ticket_id
+       AND assignment.is_current = TRUE
+
+      LEFT JOIN users assignee
+        ON assignee.user_id = assignment.assigned_to
+
+      LEFT JOIN support_teams assigned_team
+        ON assigned_team.support_team_id = assignment.assigned_team_id
+
       WHERE ${conditions.join(" AND ")}
 
       ORDER BY t.created_at DESC
@@ -212,6 +262,19 @@ const getTickets = async (req, res) => {
       values
     );
 
+    const countResult = await pool.query(
+      `SELECT COUNT(*)::INTEGER AS total
+       FROM tickets t
+       JOIN users reporter ON reporter.user_id = t.reporter_id
+       JOIN categories c ON c.category_id = t.category_id
+       JOIN locations l ON l.location_id = t.location_id
+       LEFT JOIN assignments assignment
+         ON assignment.ticket_id = t.ticket_id
+        AND assignment.is_current = TRUE
+       WHERE ${conditions.join(" AND ")}`,
+      values.slice(0, values.length - 2)
+    );
+
     return res.status(200).json({
       success: true,
       data: result.rows,
@@ -219,6 +282,7 @@ const getTickets = async (req, res) => {
         limit: parsedLimit,
         offset: parsedOffset,
         count: result.rows.length,
+        total: countResult.rows[0].total,
       },
     });
   } catch (error) {
