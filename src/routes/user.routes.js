@@ -3,6 +3,8 @@ const express = require("express");
 
 const {
   getUsers,
+  getPendingUsers,
+  getTechnicians,
   getUserById,
   createUser,
   updateUser,
@@ -39,6 +41,44 @@ router.get(
   authenticate,
   authorize("MANAGER", "AUDITOR"),
   getUsers
+);
+
+/**
+ * @swagger
+ * /api/users/pending:
+ *   get:
+ *     summary: Get pending user approvals
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Pending users retrieved successfully
+ */
+router.get(
+  "/pending",
+  authenticate,
+  authorize("MANAGER"),
+  getPendingUsers
+);
+
+/**
+ * @swagger
+ * /api/users/technicians:
+ *   get:
+ *     summary: Get active technicians with workload
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Technicians retrieved successfully
+ */
+router.get(
+  "/technicians",
+  authenticate,
+  authorize("REPORTER", "AGENT", "TECHNICIAN", "MANAGER", "AUDITOR"),
+  getTechnicians
 );
 
 /**
