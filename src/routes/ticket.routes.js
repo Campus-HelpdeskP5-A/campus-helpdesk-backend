@@ -5,6 +5,7 @@ const {
   getTickets,
   getTicketById,
   createTicket,
+  updateTicketTriage,
   updateTicketStatus,
   confirmResolution,
   reopenTicket,
@@ -135,6 +136,35 @@ router.get(
  *                   - LOW
  *                   - MEDIUM
  *                   - HIGH
+ *               attachments:
+ *                 type: array
+ *                 description: Initial attachment metadata. Actual file upload/storage is handled separately.
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - file_uuid
+ *                     - file_name
+ *                     - file_size
+ *                     - storage_path
+ *                   properties:
+ *                     file_uuid:
+ *                       type: string
+ *                       format: uuid
+ *                       description: Unique UUID of the uploaded file.
+ *                     file_name:
+ *                       type: string
+ *                       description: Original file name.
+ *                     mime_type:
+ *                       type: string
+ *                       nullable: true
+ *                       description: MIME type of the file.
+ *                     file_size:
+ *                       type: integer
+ *                       minimum: 0
+ *                       description: File size in bytes.
+ *                     storage_path:
+ *                       type: string
+ *                       description: Path where the file is stored by the storage layer.
  *     responses:
  *       201:
  *         description: Ticket created successfully
@@ -150,6 +180,65 @@ router.post(
   authenticate,
   authorize("REPORTER"),
   createTicket
+);
+
+/**
+ * @swagger
+ * /api/tickets/{id}/triage:
+ *   patch:
+ *     summary: Update ticket category and priority
+ *     description: Allows an agent to update the category and/or priority of an existing ticket during triage.
+ *     tags: [Tickets]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               category_id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: Active category ID.
+ *               priority:
+ *                 type: string
+ *                 enum:
+ *                   - LOW
+ *                   - MEDIUM
+ *                   - HIGH
+ *                   - CRITICAL
+ *                 description: Ticket priority.
+ *             example:
+ *               category_id: "20000000-0000-0000-0000-000000000001"
+ *               priority: "HIGH"
+ *     responses:
+ *       200:
+ *         description: Ticket triage updated successfully
+ *       400:
+ *         description: Invalid category or priority
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Only agents can update ticket category or priority
+ *       404:
+ *         description: Ticket or category not found
+ *       500:
+ *         description: Failed to update ticket triage
+ */
+router.patch(
+  "/:id/triage",
+  authenticate,
+  authorize("AGENT"),
+  updateTicketTriage
 );
 
 /**

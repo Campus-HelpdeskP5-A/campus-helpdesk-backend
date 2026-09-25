@@ -1,7 +1,9 @@
+
 const pool = require("../config/database");
 
 const {
   canAccessTicket,
+  canTriageTicket,
   getTicketAccessFilter,
 } = require("../utils/accessControl");
 
@@ -154,7 +156,7 @@ const getTickets = async (req, res) => {
 
     const result = await pool.query(
       `
-      SELECT 
+      SELECT
         t.ticket_id,
         t.reference_number,
 
@@ -261,7 +263,7 @@ const getTicketById = async (req, res) => {
 
     const result = await pool.query(
       `
-      SELECT 
+      SELECT
         t.ticket_id,
         t.reference_number,
 
@@ -412,7 +414,7 @@ const createTicket = async (req, res) => {
      */
     const categoryResult = await client.query(
       `
-      SELECT 
+      SELECT
         category_id,
         category_name,
         is_active
@@ -445,7 +447,7 @@ const createTicket = async (req, res) => {
      */
     const locationResult = await client.query(
       `
-      SELECT 
+      SELECT
         location_id,
         building,
         room_code
@@ -469,7 +471,7 @@ const createTicket = async (req, res) => {
      */
     const matrixResult = await client.query(
       `
-      SELECT 
+      SELECT
         pm.priority,
         pm.sla_profile_id,
         sp.name AS sla_profile_name,
@@ -529,29 +531,26 @@ const createTicket = async (req, res) => {
     /**
      * 5. Generate reference number
      *
+     * Uses PostgreSQL Sequence instead of
+     * MAX(reference_number) + 1.
+     *
+     * This prevents race conditions when
+     * multiple tickets are created concurrently.
+     *
      * Example:
-     * HLP-000001
+     * HLP-000037
      */
     const referenceResult =
-      await client.query(`
-      SELECT 
-        COALESCE(
-          MAX(
-            CAST(
-              SUBSTRING(
-                reference_number
-                FROM 'HLP-([0-9]+)'
-              ) AS INTEGER
-            )
-          ),
-          0
-        ) + 1 AS next_number
-      FROM tickets
-      WHERE reference_number LIKE 'HLP-%'
-    `);
+      await client.query(
+        `
+        SELECT nextval('ticket_reference_seq') AS next_number
+        `
+      );
 
     const nextNumber =
-      referenceResult.rows[0].next_number;
+      Number(
+        referenceResult.rows[0].next_number
+      );
 
     const referenceNumber =
       `HLP-${String(nextNumber).padStart(6, "0")}`;
@@ -619,10 +618,6 @@ const createTicket = async (req, res) => {
 
     /**
      * 7. Save initial attachment metadata
-     *
-     * The actual file upload/storage is handled
-     * separately. This stores only the attachment
-     * metadata linked to the newly created ticket.
      */
     for (const attachment of attachments) {
       const {
@@ -905,6 +900,319 @@ const createTicket = async (req, res) => {
 };
 
 /**
+ * PATCH /api/tickets/:id/triage
+ *
+ * Agent can update:
+ * - category_id
+ * - priority
+ */
+const updateTicketTriage = async (
+  req,
+  res
+) => {
+  const client = await pool.connect();
+
+  try {
+    const { id } = req.params;
+
+    const {
+      category_id,
+      priority,
+    } = req.body;
+
+    /**
+     * 1. Validate request
+     */
+    if (!category_id && !priority) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "At least category_id or priority is required",
+      });
+    }
+
+    /**
+     * 2. Agent only
+     */
+    if (req.user.role !== "AGENT") {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Only agents can update ticket category or priority",
+      });
+    }
+
+    /**
+     * 3. Check ticket triage access
+     *
+     * Agents are allowed to triage any existing ticket.
+     */
+    const access = await canTriageTicket(
+      req.user,
+      id
+    );
+
+    if (!access) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "You do not have access to this ticket",
+      });
+    }
+
+    /**
+     * 4. Get current ticket
+     */
+    const ticketResult =
+      await client.query(
+        `
+      SELECT
+        ticket_id,
+        reference_number,
+        category_id,
+        priority
+      FROM tickets
+      WHERE ticket_id = $1
+      `,
+        [id]
+      );
+
+    if (ticketResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Ticket not found",
+      });
+    }
+
+    const ticket =
+      ticketResult.rows[0];
+
+    /**
+     * 5. Validate category if provided
+     */
+    if (category_id) {
+      const categoryResult =
+        await client.query(
+          `
+          SELECT
+            category_id,
+            category_name,
+            is_active
+          FROM categories
+          WHERE category_id = $1
+          `,
+          [category_id]
+        );
+
+      if (categoryResult.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "Category not found",
+        });
+      }
+
+      if (!categoryResult.rows[0].is_active) {
+        return res.status(400).json({
+          success: false,
+          message: "Category is inactive",
+        });
+      }
+    }
+
+    /**
+     * 6. Validate priority if provided
+     */
+    if (
+      priority &&
+      !VALID_PRIORITIES.includes(priority)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid priority value",
+        allowed_values:
+          VALID_PRIORITIES,
+      });
+    }
+
+    /**
+     * 7. Start transaction
+     */
+    await client.query("BEGIN");
+
+    /**
+     * 8. Update ticket
+     */
+    const result =
+      await client.query(
+        `
+      UPDATE tickets
+      SET
+        category_id = COALESCE($1, category_id),
+        priority = COALESCE($2, priority),
+        updated_at = NOW()
+      WHERE ticket_id = $3
+      RETURNING *
+      `,
+        [
+          category_id || null,
+          priority || null,
+          id,
+        ]
+      );
+
+    const updatedTicket =
+      result.rows[0];
+
+    /**
+     * 9. Create category change event
+     *
+     * Only create the event when the category
+     * actually changed.
+     */
+    if (
+      category_id &&
+      category_id !== ticket.category_id
+    ) {
+      await client.query(
+        `
+        INSERT INTO ticket_events (
+          ticket_id,
+          event_type,
+          actor_user_id,
+          event_data
+        )
+        VALUES ($1, $2, $3, $4)
+        `,
+        [
+          id,
+          "CATEGORY_CHANGED",
+          req.user.user_id,
+          JSON.stringify({
+            reference_number:
+              ticket.reference_number,
+
+            old_category_id:
+              ticket.category_id,
+
+            new_category_id:
+              updatedTicket.category_id,
+          }),
+        ]
+      );
+    }
+
+    /**
+     * 10. Create priority change event
+     *
+     * Only create the event when the priority
+     * actually changed.
+     */
+    if (
+      priority &&
+      priority !== ticket.priority
+    ) {
+      await client.query(
+        `
+        INSERT INTO ticket_events (
+          ticket_id,
+          event_type,
+          actor_user_id,
+          event_data
+        )
+        VALUES ($1, $2, $3, $4)
+        `,
+        [
+          id,
+          "PRIORITY_CHANGED",
+          req.user.user_id,
+          JSON.stringify({
+            reference_number:
+              ticket.reference_number,
+
+            old_priority:
+              ticket.priority,
+
+            new_priority:
+              updatedTicket.priority,
+          }),
+        ]
+      );
+    }
+
+    /**
+     * 11. Audit log
+     */
+    await writeAuditLog({
+      client,
+
+      actorUserId:
+        req.user.user_id,
+
+      action:
+        "TICKET_TRIAGED",
+
+      entityType:
+        "TICKET",
+
+      entityId:
+        id,
+
+      oldValues: {
+        category_id:
+          ticket.category_id,
+
+        priority:
+          ticket.priority,
+      },
+
+      newValues: {
+        category_id:
+          updatedTicket.category_id,
+
+        priority:
+          updatedTicket.priority,
+      },
+
+      ipAddress:
+        req.ip,
+    });
+
+    /**
+     * 12. Commit transaction
+     */
+    await client.query("COMMIT");
+
+    /**
+     * 13. Response
+     */
+    return res.status(200).json({
+      success: true,
+
+      message:
+        "Ticket triage updated successfully",
+
+      data:
+        updatedTicket,
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+
+    console.error(
+      "Update ticket triage error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Failed to update ticket triage",
+    });
+  } finally {
+    client.release();
+  }
+};
+
+/**
  * PATCH /api/tickets/:id/status
  */
 const updateTicketStatus = async (
@@ -980,8 +1288,7 @@ const updateTicketStatus = async (
     ) {
       return res.status(404).json({
         success: false,
-        message:
-          "Ticket not found",
+        message: "Ticket not found",
       });
     }
 
@@ -1572,7 +1879,7 @@ const reopenTicket = async (
       ) ||
       Date.now() -
         resolvedAt >
-        windowMilliseconds
+          windowMilliseconds
     ) {
       return res.status(409).json({
         success: false,
@@ -1699,7 +2006,7 @@ const reopenTicket = async (
       notificationError
     ) {
       console.error(
-        "Reopen notification error:",
+        "Reopen ticket notification error:",
         notificationError
       );
     }
@@ -1735,6 +2042,7 @@ module.exports = {
   getTickets,
   getTicketById,
   createTicket,
+  updateTicketTriage,
   updateTicketStatus,
   confirmResolution,
   reopenTicket,

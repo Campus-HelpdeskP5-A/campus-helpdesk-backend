@@ -973,6 +973,91 @@ const openapiDocument = {
       },
     },
 
+    "/api/tickets/{id}/triage": {
+  patch: {
+    tags: ["Tickets"],
+    summary: "Update ticket category and priority",
+    description:
+      "Allows an Agent to update the category and/or priority of an existing ticket during triage.",
+    security: [{ bearerAuth: [] }],
+
+    parameters: [
+      {
+        name: "id",
+        in: "path",
+        required: true,
+        description: "Ticket ID",
+        schema: {
+          type: "string",
+          format: "uuid",
+        },
+      },
+    ],
+
+    requestBody: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+            properties: {
+              category_id: {
+                type: "string",
+                format: "uuid",
+                description: "Active category ID.",
+              },
+
+              priority: {
+                type: "string",
+                enum: [
+                  "LOW",
+                  "MEDIUM",
+                  "HIGH",
+                  "CRITICAL",
+                ],
+                description: "Ticket priority.",
+              },
+            },
+          },
+
+          example: {
+            category_id:
+              "20000000-0000-0000-0000-000000000001",
+            priority: "HIGH",
+          },
+        },
+      },
+    },
+
+    responses: {
+      200: {
+        description:
+          "Ticket triage updated successfully",
+      },
+      400: {
+        description:
+          "Invalid category or priority",
+      },
+      401: {
+        description:
+          "Authentication required",
+      },
+      403: {
+        description:
+          "Only agents can update ticket category or priority",
+      },
+      404: {
+        description:
+          "Ticket or category not found",
+      },
+      500: {
+        description:
+          "Failed to update ticket triage",
+      },
+    },
+  },
+},
+
     "/api/tickets/{id}/confirm-resolution": {
       post: {
         tags: ["Tickets"],

@@ -1,3 +1,4 @@
+
 const pool = require("../config/database");
 
 /**
@@ -34,6 +35,7 @@ const getUserTeamIds = async (userId) => {
  * AGENT
  * -> Directly assigned tickets
  * -> Tickets assigned to one of their active teams
+ * -> Unassigned tickets
  *
  * TECHNICIAN
  * -> Directly assigned tickets
@@ -95,10 +97,7 @@ const canAccessTicket = async (
   }
 
   /**
-  * AGENT
-  * Can also access unassigned tickets for triage.
-  *
-  * TECHNICIAN
+   * AGENT / TECHNICIAN
    *
    * Access is based on:
    *
@@ -107,9 +106,17 @@ const canAccessTicket = async (
    * OR
    *
    * 2. Current assignment to a team
-   *    where the user is currently a member.
+   *    where the user is currently a member
+   *
+   * OR
+   *
+   * 3. AGENT only:
+   *    Unassigned tickets
    */
-  if (user.role === "AGENT" || user.role === "TECHNICIAN") {
+  if (
+    user.role === "AGENT" ||
+    user.role === "TECHNICIAN"
+  ) {
     const result = await pool.query(
       `
       SELECT 1
@@ -150,6 +157,9 @@ const canAccessTicket = async (
 
         OR
 
+        /**
+         * AGENT can access unassigned tickets.
+         */
         (
           $3 = 'AGENT'
           AND NOT EXISTS (
@@ -177,6 +187,44 @@ const canAccessTicket = async (
    * Unknown role
    */
   return false;
+};
+
+/**
+ * Check whether an Agent can perform ticket triage.
+ *
+ * Triage means updating:
+ * - category_id
+ * - priority
+ *
+ * An Agent is allowed to triage any existing ticket.
+ *
+ * This is intentionally separate from canAccessTicket()
+ * because changing canAccessTicket() would also affect
+ * comments, attachments, work logs, assignments, etc.
+ */
+const canTriageTicket = async (
+  user,
+  ticketId
+) => {
+  if (
+    !user ||
+    !ticketId ||
+    user.role !== "AGENT"
+  ) {
+    return false;
+  }
+
+  const result = await pool.query(
+    `
+    SELECT 1
+    FROM tickets
+    WHERE ticket_id = $1
+    LIMIT 1
+    `,
+    [ticketId]
+  );
+
+  return result.rows.length > 0;
 };
 
 /**
@@ -239,15 +287,18 @@ const getTicketAccessFilter = async (
   }
 
   /**
-  * AGENT / TECHNICIAN
+   * AGENT / TECHNICIAN
    *
    * Only:
    *
-  * - Agents also see unassigned tickets for triage
-  * - directly assigned tickets
+   * - Agents also see unassigned tickets for triage
+   * - directly assigned tickets
    * - tickets assigned to their active teams
    */
-  if (user.role === "AGENT" || user.role === "TECHNICIAN") {
+  if (
+    user.role === "AGENT" ||
+    user.role === "TECHNICIAN"
+  ) {
     const unassignedClause =
       user.role === "AGENT"
         ? `OR NOT EXISTS (
@@ -285,7 +336,7 @@ const getTicketAccessFilter = async (
               AND ut.left_at IS NULL
           )
 
-            ${unassignedClause}
+          ${unassignedClause}
         )
       `,
       values: [
@@ -306,5 +357,6 @@ const getTicketAccessFilter = async (
 module.exports = {
   getUserTeamIds,
   canAccessTicket,
+  canTriageTicket,
   getTicketAccessFilter,
 };
