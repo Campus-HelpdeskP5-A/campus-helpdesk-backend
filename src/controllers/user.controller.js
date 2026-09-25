@@ -15,6 +15,13 @@ const VALID_ROLES = [
   "AUDITOR",
 ];
 
+const APPROVAL_ROLES = [
+  "AGENT",
+  "TECHNICIAN",
+  "MANAGER",
+  "AUDITOR",
+];
+
 const getUsers = async (req, res) => {
   try {
     const result = await pool.query(`
@@ -114,8 +121,7 @@ const createUser = async (req, res) => {
     if (!password || password.length < 8) {
       return res.status(400).json({
         success: false,
-        message:
-          "password must be at least 8 characters",
+        message: "password must be at least 8 characters",
       });
     }
 
@@ -129,14 +135,11 @@ const createUser = async (req, res) => {
     if (!role || !VALID_ROLES.includes(role)) {
       return res.status(400).json({
         success: false,
-        message: `role must be one of: ${VALID_ROLES.join(
-          ", "
-        )}`,
+        message: `role must be one of: ${VALID_ROLES.join(", ")}`,
       });
     }
 
-    const normalizedEmail =
-      email.trim().toLowerCase();
+    const normalizedEmail = email.trim().toLowerCase();
 
     const existingUser = await pool.query(
       `
@@ -150,20 +153,21 @@ const createUser = async (req, res) => {
     if (existingUser.rows.length > 0) {
       return res.status(409).json({
         success: false,
-        message:
-          "User with this email already exists",
+        message: "User with this email already exists",
       });
     }
 
-    const passwordHash =
-      await bcrypt.hash(password, 10);
+    const passwordHash = await bcrypt.hash(password, 10);
 
-    // Reporter does not require approval.
-    // Technician and Manager require Manager approval.
-    const accountStatus =
-      role === "REPORTER"
-        ? ACCOUNT_STATUS.ACTIVE
-        : ACCOUNT_STATUS.PENDING_APPROVAL;
+    /*
+     * REPORTER accounts are active immediately.
+     *
+     * AGENT, TECHNICIAN, MANAGER and AUDITOR accounts
+     * require Manager approval before activation.
+     */
+    const accountStatus = APPROVAL_ROLES.includes(role)
+      ? ACCOUNT_STATUS.PENDING_APPROVAL
+      : ACCOUNT_STATUS.ACTIVE;
 
     const result = await pool.query(
       `
@@ -204,17 +208,13 @@ const createUser = async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      message:
-        isPendingApprovalStatus(accountStatus)
-          ? "User created successfully and is pending Manager approval"
-          : "User created successfully",
+      message: isPendingApprovalStatus(accountStatus)
+        ? "User created successfully and is pending Manager approval"
+        : "User created successfully",
       data: result.rows[0],
     });
   } catch (error) {
-    console.error(
-      "Create user error:",
-      error
-    );
+    console.error("Create user error:", error);
 
     return res.status(500).json({
       success: false,
@@ -253,64 +253,47 @@ const updateUser = async (req, res) => {
       });
     }
 
-    const currentUser =
-      existingUser.rows[0];
+    const currentUser = existingUser.rows[0];
 
-    if (
-      email !== undefined &&
-      !email.trim()
-    ) {
+    if (email !== undefined && !email.trim()) {
       return res.status(400).json({
         success: false,
         message: "email cannot be empty",
       });
     }
 
-    if (
-      full_name !== undefined &&
-      !full_name.trim()
-    ) {
+    if (full_name !== undefined && !full_name.trim()) {
       return res.status(400).json({
         success: false,
-        message:
-          "full_name cannot be empty",
+        message: "full_name cannot be empty",
       });
     }
 
-    if (
-      role !== undefined &&
-      !VALID_ROLES.includes(role)
-    ) {
+    if (role !== undefined && !VALID_ROLES.includes(role)) {
       return res.status(400).json({
         success: false,
-        message: `role must be one of: ${VALID_ROLES.join(
-          ", "
-        )}`,
+        message: `role must be one of: ${VALID_ROLES.join(", ")}`,
       });
     }
 
     if (email !== undefined) {
-      const duplicateUser =
-        await pool.query(
-          `
-          SELECT user_id
-          FROM users
-          WHERE LOWER(email) = LOWER($1)
-            AND user_id <> $2
-          `,
-          [
-            email.trim().toLowerCase(),
-            id,
-          ]
-        );
+      const duplicateUser = await pool.query(
+        `
+        SELECT user_id
+        FROM users
+        WHERE LOWER(email) = LOWER($1)
+          AND user_id <> $2
+        `,
+        [
+          email.trim().toLowerCase(),
+          id,
+        ]
+      );
 
-      if (
-        duplicateUser.rows.length > 0
-      ) {
+      if (duplicateUser.rows.length > 0) {
         return res.status(409).json({
           success: false,
-          message:
-            "User with this email already exists",
+          message: "User with this email already exists",
         });
       }
     }
@@ -323,39 +306,46 @@ const updateUser = async (req, res) => {
     /*
      * Prevent bypassing the approval workflow.
      *
-     * Technician and Manager accounts cannot be activated
-     * directly through updateUser.
+     * Any approval-required role cannot be activated directly
+     * through updateUser while it is still pending approval.
      */
     if (
-      (newRole === "TECHNICIAN" ||
-        newRole === "MANAGER") &&
+      APPROVAL_ROLES.includes(newRole) &&
       is_active === true &&
       !isActiveStatus(currentUser.account_status)
     ) {
       return res.status(400).json({
         success: false,
         message:
-          "Technician and Manager accounts require Manager approval before activation",
+          "This account requires Manager approval before activation",
       });
     }
 
     /*
-     * If a user is changed to TECHNICIAN or MANAGER,
-     * the account becomes PENDING.
+     * If a user is changed to an approval-required role,
+     * the account becomes PENDING_APPROVAL.
      */
     const roleChangedToApprovalRole =
       role !== undefined &&
       role !== currentUser.role &&
-      (newRole === "TECHNICIAN" ||
-        newRole === "MANAGER");
+      APPROVAL_ROLES.includes(newRole);
+
+    /*
+     * If a user is changed from an approval-required role
+     * to REPORTER, the account can become ACTIVE.
+     */
+    const roleChangedToReporter =
+      role !== undefined &&
+      role !== currentUser.role &&
+      newRole === "REPORTER";
 
     let accountStatus = null;
 
     if (roleChangedToApprovalRole) {
       accountStatus = ACCOUNT_STATUS.PENDING_APPROVAL;
-    } else if (
-      is_active !== undefined
-    ) {
+    } else if (roleChangedToReporter) {
+      accountStatus = ACCOUNT_STATUS.ACTIVE;
+    } else if (is_active !== undefined) {
       accountStatus = is_active
         ? ACCOUNT_STATUS.ACTIVE
         : ACCOUNT_STATUS.SUSPENDED;
@@ -411,10 +401,7 @@ const updateUser = async (req, res) => {
       data: result.rows[0],
     });
   } catch (error) {
-    console.error(
-      "Update user error:",
-      error
-    );
+    console.error("Update user error:", error);
 
     return res.status(500).json({
       success: false,
@@ -423,85 +410,61 @@ const updateUser = async (req, res) => {
   }
 };
 
-const updateUserStatus = async (
-  req,
-  res
-) => {
+const updateUserStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { is_active } = req.body;
 
-    if (
-      typeof is_active !== "boolean"
-    ) {
+    if (typeof is_active !== "boolean") {
       return res.status(400).json({
         success: false,
-        message:
-          "is_active must be a boolean",
+        message: "is_active must be a boolean",
       });
     }
 
-    const existingUser =
-      await pool.query(
-        `
-        SELECT
-          user_id,
-          role,
-          account_status,
-          approved_by,
-          approved_at
-        FROM users
-        WHERE user_id = $1
-        `,
-        [id]
-      );
+    const existingUser = await pool.query(
+      `
+      SELECT
+        user_id,
+        role,
+        account_status,
+        approved_by,
+        approved_at
+      FROM users
+      WHERE user_id = $1
+      `,
+      [id]
+    );
 
-    if (
-      existingUser.rows.length === 0
-    ) {
+    if (existingUser.rows.length === 0) {
       return res.status(404).json({
         success: false,
         message: "User not found",
       });
     }
 
-    const user =
-      existingUser.rows[0];
+    const user = existingUser.rows[0];
 
     /*
-     * Technician and Manager accounts:
-     *
-     * PENDING:
-     * - Must go through the approval workflow.
-     *
-     * SUSPENDED:
-     * - If previously approved, they can be
-     *   reactivated by a Manager.
-     *
-     * ACTIVE:
-     * - Can be suspended normally.
+     * Any approval-required role that is still pending
+     * must go through the approval workflow.
      */
     if (
       is_active === true &&
-      (user.role === "TECHNICIAN" ||
-        user.role === "MANAGER") &&
+      APPROVAL_ROLES.includes(user.role) &&
       isPendingApprovalStatus(user.account_status)
     ) {
       return res.status(400).json({
         success: false,
         message:
-          "Technician and Manager accounts must be approved through the approval workflow before activation",
+          "This account must be approved through the approval workflow before activation",
       });
     }
 
     /*
-     * A SUSPENDED Technician or Manager
-     * can be reactivated because the account
-     * was already approved previously.
-     *
-     * No new approval is required.
+     * A previously approved account that is SUSPENDED
+     * can be reactivated by a Manager without a new approval.
      */
-
     const result = await pool.query(
       `
       UPDATE users
@@ -541,29 +504,22 @@ const updateUserStatus = async (
       data: result.rows[0],
     });
   } catch (error) {
-    console.error(
-      "Update user status error:",
-      error
-    );
+    console.error("Update user status error:", error);
 
     return res.status(500).json({
       success: false,
-      message:
-        "Failed to update user status",
+      message: "Failed to update user status",
     });
   }
 };
 
 /**
- * Approve a pending Technician or Manager account.
+ * Approve a pending AGENT, TECHNICIAN, MANAGER or AUDITOR account.
  *
  * Only a Manager can access this endpoint.
  * The route-level authorization is added in user.routes.js.
  */
-const approveUser = async (
-  req,
-  res
-) => {
+const approveUser = async (req, res) => {
   const client = await pool.connect();
 
   try {
@@ -571,25 +527,22 @@ const approveUser = async (
 
     await client.query("BEGIN");
 
-    const existingUser =
-      await client.query(
-        `
-        SELECT
-          user_id,
-          email,
-          full_name,
-          role,
-          account_status
-        FROM users
-        WHERE user_id = $1
-        FOR UPDATE
-        `,
-        [id]
-      );
+    const existingUser = await client.query(
+      `
+      SELECT
+        user_id,
+        email,
+        full_name,
+        role,
+        account_status
+      FROM users
+      WHERE user_id = $1
+      FOR UPDATE
+      `,
+      [id]
+    );
 
-    if (
-      existingUser.rows.length === 0
-    ) {
+    if (existingUser.rows.length === 0) {
       await client.query("ROLLBACK");
 
       return res.status(404).json({
@@ -598,29 +551,25 @@ const approveUser = async (
       });
     }
 
-    const user =
-      existingUser.rows[0];
+    const user = existingUser.rows[0];
 
-    // Only Technician and Manager accounts require approval.
-    if (
-      ![
-        "TECHNICIAN",
-        "MANAGER",
-      ].includes(user.role)
-    ) {
+    /*
+     * Only approval-required roles can be approved.
+     */
+    if (!APPROVAL_ROLES.includes(user.role)) {
       await client.query("ROLLBACK");
 
       return res.status(400).json({
         success: false,
         message:
-          "Only Technician and Manager accounts require approval",
+          "Only Agent, Technician, Manager and Auditor accounts require approval",
       });
     }
 
-    // Only PENDING accounts can be approved.
-    if (
-      !isPendingApprovalStatus(user.account_status)
-    ) {
+    /*
+     * Only PENDING accounts can be approved.
+     */
+    if (!isPendingApprovalStatus(user.account_status)) {
       await client.query("ROLLBACK");
 
       return res.status(400).json({
@@ -663,9 +612,6 @@ const approveUser = async (
 
     /*
      * Automatically create an audit log for the approval.
-     *
-     * The actor_user_id is the Manager who performed
-     * the approval.
      */
     await client.query(
       `
@@ -710,22 +656,17 @@ const approveUser = async (
 
     return res.status(200).json({
       success: true,
-      message:
-        "User approved successfully",
+      message: "User approved successfully",
       data: result.rows[0],
     });
   } catch (error) {
     await client.query("ROLLBACK");
 
-    console.error(
-      "Approve user error:",
-      error
-    );
+    console.error("Approve user error:", error);
 
     return res.status(500).json({
       success: false,
-      message:
-        "Failed to approve user",
+      message: "Failed to approve user",
     });
   } finally {
     client.release();
