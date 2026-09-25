@@ -116,11 +116,28 @@ app.get("/", (req, res) => {
  */
 app.get("/db-test", async (req, res) => {
   try {
-    const result = await pool.query("SELECT NOW()");
+    const result = await pool.query(`
+      SELECT
+        current_database() AS database_name,
+        current_user AS database_user,
+        current_schema() AS schema_name,
+        (
+          SELECT string_agg(column_name, ', ' ORDER BY ordinal_position)
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'audit_logs'
+        ) AS audit_logs_columns,
+        (
+          SELECT string_agg(column_name, ', ' ORDER BY ordinal_position)
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'user_teams'
+        ) AS user_teams_columns
+    `);
 
     res.json({
       message: "Database connected successfully",
-      time: result.rows[0].now,
+      database: result.rows[0],
     });
   } catch (error) {
     console.error("Database connection error:", error);
@@ -130,7 +147,6 @@ app.get("/db-test", async (req, res) => {
     });
   }
 });
-
 /**
  * API Routes
  */
