@@ -56,6 +56,35 @@ const VALID_PRIORITIES = [
 const VALID_STATUSES = VALID_TICKET_STATUSES;
 
 /**
+ * Validate UUID format.
+ *
+ * This prevents invalid UUID values from reaching PostgreSQL
+ * and causing an HTTP 500 error.
+ */
+const isValidUUID = (value) => {
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  return uuidRegex.test(value);
+};
+
+/**
+ * Return 400 when a ticket ID is not a valid UUID.
+ */
+const validateTicketId = (id, res) => {
+  if (!isValidUUID(id)) {
+    res.status(400).json({
+      success: false,
+      message: "Invalid ticket ID. Expected a valid UUID.",
+    });
+
+    return false;
+  }
+
+  return true;
+};
+
+/**
  * GET /api/tickets
  *
  * Access:
@@ -247,6 +276,13 @@ const getTickets = async (req, res) => {
 const getTicketById = async (req, res) => {
   try {
     const { id } = req.params;
+
+    /**
+     * Validate UUID before querying PostgreSQL.
+     */
+    if (!validateTicketId(id, res)) {
+      return;
+    }
 
     const access = await canAccessTicket(
       req.user,
@@ -530,15 +566,6 @@ const createTicket = async (req, res) => {
 
     /**
      * 5. Generate reference number
-     *
-     * Uses PostgreSQL Sequence instead of
-     * MAX(reference_number) + 1.
-     *
-     * This prevents race conditions when
-     * multiple tickets are created concurrently.
-     *
-     * Example:
-     * HLP-000037
      */
     const referenceResult =
       await client.query(
@@ -915,6 +942,13 @@ const updateTicketTriage = async (
   try {
     const { id } = req.params;
 
+    /**
+     * Validate UUID before querying PostgreSQL.
+     */
+    if (!validateTicketId(id, res)) {
+      return;
+    }
+
     const {
       category_id,
       priority,
@@ -944,8 +978,6 @@ const updateTicketTriage = async (
 
     /**
      * 3. Check ticket triage access
-     *
-     * Agents are allowed to triage any existing ticket.
      */
     const access = await canTriageTicket(
       req.user,
@@ -1065,9 +1097,6 @@ const updateTicketTriage = async (
 
     /**
      * 9. Create category change event
-     *
-     * Only create the event when the category
-     * actually changed.
      */
     if (
       category_id &&
@@ -1103,9 +1132,6 @@ const updateTicketTriage = async (
 
     /**
      * 10. Create priority change event
-     *
-     * Only create the event when the priority
-     * actually changed.
      */
     if (
       priority &&
@@ -1224,6 +1250,13 @@ const updateTicketStatus = async (
 
   try {
     const { id } = req.params;
+
+    /**
+     * Validate UUID before querying PostgreSQL.
+     */
+    if (!validateTicketId(id, res)) {
+      return;
+    }
 
     const {
       status,
@@ -1588,6 +1621,13 @@ const confirmResolution = async (
     const { id } =
       req.params;
 
+    /**
+     * Validate UUID before querying PostgreSQL.
+     */
+    if (!validateTicketId(id, res)) {
+      return;
+    }
+
     const ticketResult =
       await client.query(
         `
@@ -1716,7 +1756,8 @@ const confirmResolution = async (
         "TICKET_STATUS_CHANGED",
       entityType:
         "TICKET",
-      entityId: id,
+      entityId:
+        id,
       oldValues: {
         status:
           "RESOLVED",
@@ -1797,6 +1838,13 @@ const reopenTicket = async (
   try {
     const { id } =
       req.params;
+
+    /**
+     * Validate UUID before querying PostgreSQL.
+     */
+    if (!validateTicketId(id, res)) {
+      return;
+    }
 
     const reopenWindowDays =
       Number(
@@ -1973,7 +2021,8 @@ const reopenTicket = async (
         "TICKET_STATUS_CHANGED",
       entityType:
         "TICKET",
-      entityId: id,
+      entityId:
+        id,
       oldValues: {
         status:
           oldStatus,
@@ -2047,3 +2096,4 @@ module.exports = {
   confirmResolution,
   reopenTicket,
 };
+
