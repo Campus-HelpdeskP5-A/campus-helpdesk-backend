@@ -673,8 +673,91 @@ const approveUser = async (req, res) => {
   }
 };
 
+
+/**
+ * GET /api/users/pending
+ * Manager-only list of accounts waiting for approval.
+ */
+const getPendingUsers = async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        user_id,
+        email,
+        full_name,
+        role,
+        requested_role,
+        account_status,
+        created_at
+      FROM users
+      WHERE account_status = 'PENDING_APPROVAL'
+      ORDER BY created_at ASC
+    `);
+
+    return res.status(200).json({
+      success: true,
+      count: result.rows.length,
+      data: result.rows,
+    });
+  } catch (error) {
+    console.error("Get pending users error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to retrieve pending users",
+    });
+  }
+};
+
+/**
+ * GET /api/users/technicians
+ * Returns active technicians with their current open workload.
+ */
+const getTechnicians = async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        u.user_id,
+        u.email,
+        u.full_name,
+        u.role,
+        COUNT(
+          CASE
+            WHEN t.status IN ('ASSIGNED', 'IN_PROGRESS', 'WAITING')
+            THEN 1
+          END
+        )::int AS workload
+      FROM users u
+      LEFT JOIN assignments a
+        ON a.assigned_to = u.user_id
+       AND a.is_current = TRUE
+      LEFT JOIN tickets t
+        ON t.ticket_id = a.ticket_id
+      WHERE u.role = 'TECHNICIAN'
+        AND u.account_status = 'ACTIVE'
+      GROUP BY u.user_id, u.email, u.full_name, u.role
+      ORDER BY workload ASC, u.full_name ASC
+    `);
+
+    return res.status(200).json({
+      success: true,
+      count: result.rows.length,
+      data: result.rows,
+    });
+  } catch (error) {
+    console.error("Get technicians error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to retrieve technicians",
+    });
+  }
+};
+
 module.exports = {
   getUsers,
+  getPendingUsers,
+  getTechnicians,
   getUserById,
   createUser,
   updateUser,
