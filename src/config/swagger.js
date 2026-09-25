@@ -367,7 +367,6 @@ const openapiDocument = {
         tags: ["Users"],
         summary: "Create a user",
         security: [{ bearerAuth: [] }],
-
         requestBody: {
           required: true,
           content: {
@@ -411,7 +410,6 @@ const openapiDocument = {
             },
           },
         },
-
         responses: {
           201: {
             description: "User created successfully",
@@ -802,9 +800,68 @@ const openapiDocument = {
         tags: ["Tickets"],
         summary: "Create ticket",
         security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: [
+                  "category_id",
+                  "location_id",
+                  "title",
+                  "description",
+                  "impact",
+                  "urgency",
+                ],
+                properties: {
+                  category_id: {
+                    type: "string",
+                    format: "uuid",
+                  },
+                  location_id: {
+                    type: "string",
+                    format: "uuid",
+                  },
+                  asset_id: {
+                    type: "string",
+                    format: "uuid",
+                    nullable: true,
+                  },
+                  title: {
+                    type: "string",
+                    example: "Projector not working",
+                  },
+                  description: {
+                    type: "string",
+                    example:
+                      "The projector in room 204 is not displaying anything.",
+                  },
+                  impact: {
+                    type: "string",
+                    enum: ["LOW", "MEDIUM", "HIGH"],
+                  },
+                  urgency: {
+                    type: "string",
+                    enum: ["LOW", "MEDIUM", "HIGH"],
+                  },
+                },
+              },
+            },
+          },
+        },
         responses: {
           201: {
             description: "Ticket created successfully",
+          },
+          400: {
+            description: "Invalid request",
+          },
+          401: {
+            description: "Authentication required",
+          },
+          403: {
+            description: "Only reporters can create tickets",
           },
         },
       },
@@ -842,8 +899,9 @@ const openapiDocument = {
         tags: ["Tickets"],
         summary: "Update ticket status",
         description:
-          "Allowed lifecycle transitions are NEW to TRIAGED, TRIAGED to ASSIGNED, ASSIGNED to IN_PROGRESS, IN_PROGRESS to WAITING or RESOLVED, WAITING to IN_PROGRESS, and REOPENED to IN_PROGRESS. Reporter reopening uses the dedicated reopen endpoint.",
+          "Update the status of a ticket according to the allowed lifecycle transitions.",
         security: [{ bearerAuth: [] }],
+
         parameters: [
           {
             name: "id",
@@ -855,9 +913,61 @@ const openapiDocument = {
             },
           },
         ],
+
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["status"],
+                properties: {
+                  status: {
+                    type: "string",
+                    enum: [
+                      "NEW",
+                      "TRIAGED",
+                      "ASSIGNED",
+                      "IN_PROGRESS",
+                      "WAITING",
+                      "RESOLVED",
+                      "REOPENED",
+                      "CLOSED",
+                    ],
+                  },
+                  reason: {
+                    type: "string",
+                    description:
+                      "Optional reason for the status change.",
+                  },
+                },
+              },
+              example: {
+                status: "TRIAGED",
+                reason: "Ticket triaged by support agent",
+              },
+            },
+          },
+        },
+
         responses: {
           200: {
             description: "Ticket status updated successfully",
+          },
+          400: {
+            description: "Invalid status value or transition",
+          },
+          401: {
+            description: "Authentication required",
+          },
+          403: {
+            description: "Not authorized to update ticket status",
+          },
+          404: {
+            description: "Ticket not found",
+          },
+          409: {
+            description: "Invalid ticket status transition",
           },
         },
       },
@@ -873,12 +983,24 @@ const openapiDocument = {
             name: "id",
             in: "path",
             required: true,
-            schema: { type: "string", format: "uuid" },
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
           },
         ],
         responses: {
           200: {
             description: "Resolution confirmed and ticket closed",
+          },
+          401: {
+            description: "Authentication required",
+          },
+          403: {
+            description: "Only the reporter can confirm resolution",
+          },
+          404: {
+            description: "Ticket not found",
           },
         },
       },
@@ -894,7 +1016,10 @@ const openapiDocument = {
             name: "id",
             in: "path",
             required: true,
-            schema: { type: "string", format: "uuid" },
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
           },
         ],
         requestBody: {
@@ -902,7 +1027,11 @@ const openapiDocument = {
             "application/json": {
               schema: {
                 type: "object",
-                properties: { reason: { type: "string" } },
+                properties: {
+                  reason: {
+                    type: "string",
+                  },
+                },
               },
             },
           },
@@ -1116,6 +1245,25 @@ const openapiDocument = {
         tags: ["Comments"],
         summary: "Create comment",
         security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  ticket_id: {
+                    type: "string",
+                    format: "uuid",
+                  },
+                  body: {
+                    type: "string",
+                  },
+                },
+              },
+            },
+          },
+        },
         responses: {
           201: {
             description: "Comment created successfully",
@@ -1200,18 +1348,96 @@ const openapiDocument = {
       },
     },
 
-    "/api/attachments": {
-      post: {
-        tags: ["Attachments"],
-        summary: "Create attachment",
-        security: [{ bearerAuth: [] }],
-        responses: {
-          201: {
-            description: "Attachment created successfully",
+ "/api/assignments": {
+  get: {
+    tags: ["Assignments"],
+    summary: "Get assignments",
+    security: [{ bearerAuth: [] }],
+    responses: {
+      200: {
+        description: "Assignments retrieved successfully",
+      },
+    },
+  },
+
+  post: {
+    tags: ["Assignments"],
+    summary: "Create assignment",
+    description: "Assign a technician to a ticket.",
+    security: [{ bearerAuth: [] }],
+
+    requestBody: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+            required: ["ticket_id", "assigned_to"],
+            properties: {
+              ticket_id: {
+                type: "string",
+                format: "uuid",
+                description: "Ticket ID",
+                example:
+                  "d68c8dcb-ffdc-513b-f84c-7e8cbdaa305f",
+              },
+
+              assigned_to: {
+                type: "string",
+                format: "uuid",
+                description: "Technician user ID",
+                example:
+                  "00000000-0000-0000-0000-000000000005",
+              },
+
+              assigned_team_id: {
+                type: "string",
+                format: "uuid",
+                nullable: true,
+                description:
+                  "Optional support team ID. At least one of assigned_to or assigned_team_id is required.",
+                example:
+                  "00000000-0000-0000-0000-000000000001",
+              },
+            },
+          },
+
+          example: {
+            ticket_id:
+              "d68c8dcb-ffdc-513b-f84c-7e8cbdaa305f",
+            assigned_to:
+              "00000000-0000-0000-0000-000000000005",
+            assigned_team_id: null,
           },
         },
       },
     },
+
+    responses: {
+      201: {
+        description: "Assignment created successfully",
+      },
+      400: {
+        description: "Invalid assignment data",
+      },
+      401: {
+        description: "Authentication required",
+      },
+      403: {
+        description: "Not authorized to create assignment",
+      },
+      404: {
+        description: "Ticket or technician not found",
+      },
+      409: {
+        description: "Assignment conflict",
+      },
+      500: {
+        description: "Server error",
+      },
+    },
+  },
+},
 
     /*
      * =========================
@@ -1537,17 +1763,80 @@ const openapiDocument = {
     },
 
     "/api/work-logs": {
-      post: {
-        tags: ["Work Logs"],
-        summary: "Create work log",
-        security: [{ bearerAuth: [] }],
-        responses: {
-          201: {
-            description: "Work log created successfully",
+  post: {
+    tags: ["Work Logs"],
+    summary: "Create work log",
+    description: "Create a work log for a ticket.",
+    security: [{ bearerAuth: [] }],
+
+    requestBody: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+            required: ["ticket_id", "time_spent_minutes"],
+            properties: {
+              ticket_id: {
+                type: "string",
+                format: "uuid",
+                description: "Ticket ID",
+                example:
+                  "d68c8dcb-ffdc-513b-f84c-7e8cbdaa305f",
+              },
+
+              time_spent_minutes: {
+                type: "integer",
+                minimum: 1,
+                description:
+                  "Time spent working on the ticket in minutes.",
+                example: 60,
+              },
+
+              note: {
+                type: "string",
+                nullable: true,
+                description:
+                  "Work performed or technician notes.",
+                example:
+                  "Diagnosed and worked on the reported issue.",
+              },
+            },
+          },
+
+          example: {
+            ticket_id:
+              "d68c8dcb-ffdc-513b-f84c-7e8cbdaa305f",
+            time_spent_minutes: 60,
+            note:
+              "Diagnosed and worked on the reported issue.",
           },
         },
       },
     },
+
+    responses: {
+      201: {
+        description: "Work log created successfully",
+      },
+      400: {
+        description: "Invalid work log data",
+      },
+      401: {
+        description: "Authentication required",
+      },
+      403: {
+        description: "Not authorized to create work log",
+      },
+      404: {
+        description: "Ticket not found",
+      },
+      500: {
+        description: "Server error",
+      },
+    },
+  },
+},
 
     /*
      * =========================
@@ -2132,7 +2421,8 @@ const openapiDocument = {
         security: [{ bearerAuth: [] }],
         responses: {
           200: {
-            description: "Manager dashboard data retrieved successfully",
+            description:
+              "Manager dashboard data retrieved successfully",
           },
           401: {
             description: "Authentication required",
@@ -2151,7 +2441,8 @@ const openapiDocument = {
         security: [{ bearerAuth: [] }],
         responses: {
           200: {
-            description: "Manager dashboard data retrieved successfully",
+            description:
+              "Manager dashboard data retrieved successfully",
           },
           401: {
             description: "Authentication required",
@@ -2189,7 +2480,8 @@ const openapiDocument = {
         security: [{ bearerAuth: [] }],
         responses: {
           200: {
-            description: "Technician dashboard data retrieved successfully",
+            description:
+              "Technician dashboard data retrieved successfully",
           },
           401: {
             description: "Authentication required",
@@ -2201,10 +2493,10 @@ const openapiDocument = {
       },
     },
 
-    "/api/dashboard/team": {
+     "/api/dashboard/team": {
       get: {
         tags: ["Dashboard"],
-        summary: "Get team dashboard data (compatibility route)",
+        summary: "Get team dashboard data",
         security: [{ bearerAuth: [] }],
         responses: {
           200: {
@@ -2214,7 +2506,7 @@ const openapiDocument = {
             description: "Authentication required",
           },
           403: {
-            description: "Manager, Agent, or Technician role required",
+            description: "Manager role required",
           },
         },
       },
@@ -2261,4 +2553,3 @@ const openapiDocument = {
 };
 
 module.exports = openapiDocument;
-

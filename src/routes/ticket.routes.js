@@ -1,3 +1,4 @@
+
 const express = require("express");
 
 const {
@@ -66,6 +67,10 @@ router.get(
  *     responses:
  *       200:
  *         description: Ticket retrieved successfully
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
  *       404:
  *         description: Ticket not found
  */
@@ -120,25 +125,30 @@ router.get(
  *                 type: string
  *               impact:
  *                 type: string
- *                 enum: [LOW, MEDIUM, HIGH]
+ *                 enum:
+ *                   - LOW
+ *                   - MEDIUM
+ *                   - HIGH
  *               urgency:
  *                 type: string
- *                 enum: [LOW, MEDIUM, HIGH]
+ *                 enum:
+ *                   - LOW
+ *                   - MEDIUM
+ *                   - HIGH
  *     responses:
  *       201:
  *         description: Ticket created successfully
  *       400:
  *         description: Invalid request
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Only reporters can create tickets
  */
 router.post(
   "/",
   authenticate,
-  authorize(
-    "REPORTER",
-    "AGENT",
-    "TECHNICIAN",
-    "MANAGER"
-  ),
+  authorize("REPORTER"),
   createTicket
 );
 
@@ -168,12 +178,26 @@ router.post(
  *             properties:
  *               status:
  *                 type: string
- *                 enum: [NEW, TRIAGED, ASSIGNED, IN_PROGRESS, WAITING, RESOLVED, REOPENED, CLOSED]
-              reason:
-                type: string
+ *                 enum:
+ *                   - NEW
+ *                   - TRIAGED
+ *                   - ASSIGNED
+ *                   - IN_PROGRESS
+ *                   - WAITING
+ *                   - RESOLVED
+ *                   - REOPENED
+ *                   - CLOSED
+ *               reason:
+ *                 type: string
  *     responses:
  *       200:
  *         description: Ticket status updated successfully
+ *       400:
+ *         description: Invalid status transition
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Not authorized to update ticket status
  *       404:
  *         description: Ticket not found
  */
@@ -188,6 +212,31 @@ router.patch(
   updateTicketStatus
 );
 
+/**
+ * @swagger
+ * /api/tickets/{id}/confirm-resolution:
+ *   post:
+ *     summary: Confirm ticket resolution
+ *     tags: [Tickets]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Resolution confirmed successfully
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Only the reporter can confirm resolution
+ *       404:
+ *         description: Ticket not found
+ */
 router.post(
   "/:id/confirm-resolution",
   authenticate,
@@ -195,6 +244,31 @@ router.post(
   confirmResolution
 );
 
+/**
+ * @swagger
+ * /api/tickets/{id}/reopen:
+ *   post:
+ *     summary: Reopen a resolved or closed ticket
+ *     tags: [Tickets]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Ticket reopened successfully
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Only the reporter can reopen a ticket
+ *       404:
+ *         description: Ticket not found
+ */
 router.post(
   "/:id/reopen",
   authenticate,

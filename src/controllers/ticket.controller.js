@@ -4,30 +4,52 @@ const {
   canAccessTicket,
   getTicketAccessFilter,
 } = require("../utils/accessControl");
+
 const {
   VALID_TICKET_STATUSES,
   canTransition,
   canRoleTransition,
   getAllowedNextStatuses,
 } = require("../utils/ticketWorkflow");
+
 const {
   getCanonicalPriority,
 } = require("../utils/priorityMatrix");
+
 const {
   calculateSlaDueDates,
 } = require("../services/sla.service");
+
 const {
   detectEmergency,
 } = require("../utils/emergency");
+
 const {
   notifyStatusChanged,
 } = require("../services/notification.service");
+
 const {
   writeAuditLog,
 } = require("../services/audit.service");
 
-const VALID_IMPACTS = ["LOW", "MEDIUM", "HIGH"];
-const VALID_URGENCIES = ["LOW", "MEDIUM", "HIGH"];
+const VALID_IMPACTS = [
+  "LOW",
+  "MEDIUM",
+  "HIGH",
+];
+
+const VALID_URGENCIES = [
+  "LOW",
+  "MEDIUM",
+  "HIGH",
+];
+
+const VALID_PRIORITIES = [
+  "LOW",
+  "MEDIUM",
+  "HIGH",
+  "CRITICAL",
+];
 
 const VALID_STATUSES = VALID_TICKET_STATUSES;
 
@@ -61,11 +83,16 @@ const getTickets = async (req, res) => {
       0
     );
 
-    const accessFilter = await getTicketAccessFilter(req.user);
+    const accessFilter = await getTicketAccessFilter(
+      req.user
+    );
 
     const conditions = [accessFilter.clause];
     const values = [...accessFilter.values];
 
+    /**
+     * Filter by status
+     */
     if (status) {
       if (!VALID_STATUSES.includes(status)) {
         return res.status(400).json({
@@ -76,24 +103,49 @@ const getTickets = async (req, res) => {
       }
 
       values.push(status);
-      conditions.push(`t.status = $${values.length}`);
+      conditions.push(
+        `t.status = $${values.length}`
+      );
     }
 
+    /**
+     * Filter by priority
+     */
     if (priority) {
+      if (!VALID_PRIORITIES.includes(priority)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid priority value",
+          allowed_values: VALID_PRIORITIES,
+        });
+      }
+
       values.push(priority);
-      conditions.push(`t.priority = $${values.length}`);
+      conditions.push(
+        `t.priority = $${values.length}`
+      );
     }
 
+    /**
+     * Filter by category
+     */
     if (category_id) {
       values.push(category_id);
-      conditions.push(`t.category_id = $${values.length}`);
+      conditions.push(
+        `t.category_id = $${values.length}`
+      );
     }
 
+    /**
+     * Pagination
+     */
     values.push(parsedLimit);
-    const limitPlaceholder = `$${values.length}`;
+    const limitPlaceholder =
+      `$${values.length}`;
 
     values.push(parsedOffset);
-    const offsetPlaceholder = `$${values.length}`;
+    const offsetPlaceholder =
+      `$${values.length}`;
 
     const result = await pool.query(
       `
@@ -163,7 +215,10 @@ const getTickets = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get tickets error:", error);
+    console.error(
+      "Get tickets error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
@@ -194,7 +249,8 @@ const getTicketById = async (req, res) => {
     if (!access) {
       return res.status(403).json({
         success: false,
-        message: "You do not have access to this ticket",
+        message:
+          "You do not have access to this ticket",
       });
     }
 
@@ -263,7 +319,10 @@ const getTicketById = async (req, res) => {
       data: result.rows[0],
     });
   } catch (error) {
-    console.error("Get ticket error:", error);
+    console.error(
+      "Get ticket error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
@@ -428,22 +487,28 @@ const createTicket = async (req, res) => {
     }
 
     const matrix = matrixResult.rows[0];
-    const calculatedPriority = getCanonicalPriority(
-      impact,
-      urgency
-    );
+
+    const calculatedPriority =
+      getCanonicalPriority(
+        impact,
+        urgency
+      );
 
     const now = new Date();
-    const { responseDueAt, resolutionDueAt } =
-      await calculateSlaDueDates({
-        client,
-        businessHoursId: matrix.business_hours_id,
-        startDate: now,
-        responseTargetMinutes:
-          matrix.response_target_minutes,
-        resolutionTargetMinutes:
-          matrix.resolution_target_minutes,
-      });
+
+    const {
+      responseDueAt,
+      resolutionDueAt,
+    } = await calculateSlaDueDates({
+      client,
+      businessHoursId:
+        matrix.business_hours_id,
+      startDate: now,
+      responseTargetMinutes:
+        matrix.response_target_minutes,
+      resolutionTargetMinutes:
+        matrix.resolution_target_minutes,
+    });
 
     /**
      * 5. Generate reference number
@@ -451,7 +516,8 @@ const createTicket = async (req, res) => {
      * Example:
      * HLP-000001
      */
-    const referenceResult = await client.query(`
+    const referenceResult =
+      await client.query(`
       SELECT
         COALESCE(
           MAX(
@@ -477,8 +543,9 @@ const createTicket = async (req, res) => {
     /**
      * 6. Insert ticket
      */
-    const ticketResult = await client.query(
-      `
+    const ticketResult =
+      await client.query(
+        `
       INSERT INTO tickets (
         reference_number,
         reporter_id,
@@ -513,25 +580,26 @@ const createTicket = async (req, res) => {
       )
       RETURNING *
       `,
-      [
-        referenceNumber,
-        reporterId,
-        category_id,
-        location_id,
-        asset_id || null,
-        matrix.sla_profile_id,
-        title,
-        description,
-        impact,
-        urgency,
-        calculatedPriority,
-        "NEW",
-        responseDueAt,
-        resolutionDueAt,
-      ]
-    );
+        [
+          referenceNumber,
+          reporterId,
+          category_id,
+          location_id,
+          asset_id || null,
+          matrix.sla_profile_id,
+          title,
+          description,
+          impact,
+          urgency,
+          calculatedPriority,
+          "NEW",
+          responseDueAt,
+          resolutionDueAt,
+        ]
+      );
 
-    const ticket = ticketResult.rows[0];
+    const ticket =
+      ticketResult.rows[0];
 
     await client.query(
       `
@@ -548,7 +616,19 @@ const createTicket = async (req, res) => {
         reason,
         created_by
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, $9, $10)
+      VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        $5,
+        $6,
+        $7,
+        $8,
+        TRUE,
+        $9,
+        $10
+      )
       `,
       [
         ticket.ticket_id,
@@ -585,8 +665,10 @@ const createTicket = async (req, res) => {
           reference_number:
             ticket.reference_number,
           title: ticket.title,
-          priority: ticket.priority,
-          status: ticket.status,
+          priority:
+            ticket.priority,
+          status:
+            ticket.status,
         }),
       ]
     );
@@ -618,16 +700,19 @@ const createTicket = async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      message: "Ticket created successfully",
+      message:
+        "Ticket created successfully",
       data: {
         ticket,
         emergency,
-        priority: calculatedPriority,
+        priority:
+          calculatedPriority,
         sla: {
           sla_profile_id:
             matrix.sla_profile_id,
 
-          name: matrix.sla_profile_name,
+          name:
+            matrix.sla_profile_name,
 
           response_target_minutes:
             matrix.response_target_minutes,
@@ -669,7 +754,8 @@ const createTicket = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: "Failed to create ticket",
+      message:
+        "Failed to create ticket",
     });
   } finally {
     client.release();
@@ -679,11 +765,16 @@ const createTicket = async (req, res) => {
 /**
  * PATCH /api/tickets/:id/status
  */
-const updateTicketStatus = async (req, res) => {
-  const client = await pool.connect();
+const updateTicketStatus = async (
+  req,
+  res
+) => {
+  const client =
+    await pool.connect();
 
   try {
     const { id } = req.params;
+
     const {
       status,
       reason,
@@ -695,25 +786,31 @@ const updateTicketStatus = async (req, res) => {
     if (!status) {
       return res.status(400).json({
         success: false,
-        message: "status is required",
+        message:
+          "status is required",
       });
     }
 
-    if (!VALID_STATUSES.includes(status)) {
+    if (
+      !VALID_STATUSES.includes(status)
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Invalid status value",
-        allowed_values: VALID_STATUSES,
+        message:
+          "Invalid status value",
+        allowed_values:
+          VALID_STATUSES,
       });
     }
 
     /**
      * 2. Check ticket access
      */
-    const access = await canAccessTicket(
-      req.user,
-      id
-    );
+    const access =
+      await canAccessTicket(
+        req.user,
+        id
+      );
 
     if (!access) {
       return res.status(403).json({
@@ -726,28 +823,35 @@ const updateTicketStatus = async (req, res) => {
     /**
      * 3. Get ticket
      */
-    const ticketResult = await client.query(
-      `
+    const ticketResult =
+      await client.query(
+        `
       SELECT *
       FROM tickets
       WHERE ticket_id = $1
       `,
-      [id]
-    );
+        [id]
+      );
 
-    if (ticketResult.rows.length === 0) {
+    if (
+      ticketResult.rows.length === 0
+    ) {
       return res.status(404).json({
         success: false,
-        message: "Ticket not found",
+        message:
+          "Ticket not found",
       });
     }
 
-    const ticket = ticketResult.rows[0];
+    const ticket =
+      ticketResult.rows[0];
 
     /**
      * 4. Reporters cannot change status
      */
-    if (req.user.role === "REPORTER") {
+    if (
+      req.user.role === "REPORTER"
+    ) {
       return res.status(403).json({
         success: false,
         message:
@@ -758,7 +862,8 @@ const updateTicketStatus = async (req, res) => {
     if (
       status === "CLOSED" &&
       ticket.status === "RESOLVED" &&
-      process.env.REQUIRE_REPORTER_CONFIRMATION !== "false"
+      process.env.REQUIRE_REPORTER_CONFIRMATION !==
+        "false"
     ) {
       return res.status(409).json({
         success: false,
@@ -770,7 +875,9 @@ const updateTicketStatus = async (req, res) => {
     /**
      * 5. Prevent duplicate status transition
      */
-    if (ticket.status === status) {
+    if (
+      ticket.status === status
+    ) {
       return res.status(400).json({
         success: false,
         message:
@@ -778,16 +885,30 @@ const updateTicketStatus = async (req, res) => {
       });
     }
 
-    if (!canTransition(ticket.status, status)) {
+    if (
+      !canTransition(
+        ticket.status,
+        status
+      )
+    ) {
       return res.status(409).json({
         success: false,
         message:
           `Transition from ${ticket.status} to ${status} is not allowed`,
-        allowed_next_statuses: getAllowedNextStatuses(ticket.status),
+        allowed_next_statuses:
+          getAllowedNextStatuses(
+            ticket.status
+          ),
       });
     }
 
-    if (!canRoleTransition(req.user.role, ticket.status, status)) {
+    if (
+      !canRoleTransition(
+        req.user.role,
+        ticket.status,
+        status
+      )
+    ) {
       return res.status(403).json({
         success: false,
         message:
@@ -797,7 +918,8 @@ const updateTicketStatus = async (req, res) => {
 
     await client.query("BEGIN");
 
-    const now = new Date();
+    const now =
+      new Date();
 
     let firstResponseAt =
       ticket.first_response_at;
@@ -815,7 +937,8 @@ const updateTicketStatus = async (req, res) => {
       !firstResponseAt &&
       status === "IN_PROGRESS"
     ) {
-      firstResponseAt = now;
+      firstResponseAt =
+        now;
     }
 
     /**
@@ -825,7 +948,8 @@ const updateTicketStatus = async (req, res) => {
       status === "RESOLVED" &&
       !resolvedAt
     ) {
-      resolvedAt = now;
+      resolvedAt =
+        now;
     }
 
     /**
@@ -835,10 +959,13 @@ const updateTicketStatus = async (req, res) => {
       status === "CLOSED" &&
       !closedAt
     ) {
-      closedAt = now;
+      closedAt =
+        now;
     }
 
-    if (status === "REOPENED") {
+    if (
+      status === "REOPENED"
+    ) {
       resolvedAt = null;
       closedAt = null;
     }
@@ -846,8 +973,9 @@ const updateTicketStatus = async (req, res) => {
     /**
      * 6. Update ticket
      */
-    const result = await client.query(
-      `
+    const result =
+      await client.query(
+        `
       UPDATE tickets
       SET
         status = $1,
@@ -858,14 +986,14 @@ const updateTicketStatus = async (req, res) => {
       WHERE ticket_id = $5
       RETURNING *
       `,
-      [
-        status,
-        firstResponseAt,
-        resolvedAt,
-        closedAt,
-        id,
-      ]
-    );
+        [
+          status,
+          firstResponseAt,
+          resolvedAt,
+          closedAt,
+          id,
+        ]
+      );
 
     /**
      * 7. Status history
@@ -886,7 +1014,8 @@ const updateTicketStatus = async (req, res) => {
         ticket.status,
         status,
         req.user.user_id,
-        reason || "Ticket status updated",
+        reason ||
+          "Ticket status updated",
       ]
     );
 
@@ -908,36 +1037,58 @@ const updateTicketStatus = async (req, res) => {
         "STATUS_CHANGED",
         req.user.user_id,
         JSON.stringify({
-          old_status: ticket.status,
-          new_status: status,
-          reason: reason || "Ticket status updated",
+          old_status:
+            ticket.status,
+          new_status:
+            status,
+          reason:
+            reason ||
+            "Ticket status updated",
         }),
       ]
     );
 
     await writeAuditLog({
       client,
-      actorUserId: req.user.user_id,
-      action: "TICKET_STATUS_CHANGED",
-      entityType: "TICKET",
+      actorUserId:
+        req.user.user_id,
+      action:
+        "TICKET_STATUS_CHANGED",
+      entityType:
+        "TICKET",
       entityId: id,
-      oldValues: { status: ticket.status },
-      newValues: { status },
-      ipAddress: req.ip,
+      oldValues: {
+        status:
+          ticket.status,
+      },
+      newValues: {
+        status,
+      },
+      ipAddress:
+        req.ip,
     });
 
-    await client.query("COMMIT");
+    await client.query(
+      "COMMIT"
+    );
 
     if (ticket.reporter_id) {
       try {
         await notifyStatusChanged({
-          recipientUserId: ticket.reporter_id,
-          ticketId: id,
-          referenceNumber: ticket.reference_number,
-          oldStatus: ticket.status,
-          newStatus: status,
+          recipientUserId:
+            ticket.reporter_id,
+          ticketId:
+            id,
+          referenceNumber:
+            ticket.reference_number,
+          oldStatus:
+            ticket.status,
+          newStatus:
+            status,
         });
-      } catch (notificationError) {
+      } catch (
+        notificationError
+      ) {
         console.error(
           "Status notification error:",
           notificationError
@@ -949,10 +1100,13 @@ const updateTicketStatus = async (req, res) => {
       success: true,
       message:
         "Ticket status updated successfully",
-      data: result.rows[0],
+      data:
+        result.rows[0],
     });
   } catch (error) {
-    await client.query("ROLLBACK");
+    await client.query(
+      "ROLLBACK"
+    );
 
     console.error(
       "Update ticket status error:",
@@ -974,121 +1128,205 @@ const updateTicketStatus = async (req, res) => {
  *
  * A reporter confirms a resolved ticket and closes it.
  */
-const confirmResolution = async (req, res) => {
-  const client = await pool.connect();
+const confirmResolution = async (
+  req,
+  res
+) => {
+  const client =
+    await pool.connect();
 
   try {
-    const { id } = req.params;
+    const { id } =
+      req.params;
 
-    const ticketResult = await client.query(
-      `
-      SELECT ticket_id, reporter_id, reference_number, status
+    const ticketResult =
+      await client.query(
+        `
+      SELECT
+        ticket_id,
+        reporter_id,
+        reference_number,
+        status
       FROM tickets
       WHERE ticket_id = $1
       `,
-      [id]
-    );
+        [id]
+      );
 
-    if (ticketResult.rows.length === 0) {
+    if (
+      ticketResult.rows.length === 0
+    ) {
       return res.status(404).json({
         success: false,
-        message: "Ticket not found",
+        message:
+          "Ticket not found",
       });
     }
 
-    const ticket = ticketResult.rows[0];
+    const ticket =
+      ticketResult.rows[0];
 
-    if (ticket.reporter_id !== req.user.user_id) {
+    if (
+      ticket.reporter_id !==
+      req.user.user_id
+    ) {
       return res.status(403).json({
         success: false,
-        message: "Only the ticket reporter can confirm resolution",
+        message:
+          "Only the ticket reporter can confirm resolution",
       });
     }
 
-    if (ticket.status !== "RESOLVED") {
+    if (
+      ticket.status !==
+      "RESOLVED"
+    ) {
       return res.status(409).json({
         success: false,
-        message: "Only resolved tickets can be confirmed",
+        message:
+          "Only resolved tickets can be confirmed",
       });
     }
 
-    await client.query("BEGIN");
+    await client.query(
+      "BEGIN"
+    );
 
-    const result = await client.query(
-      `
+    const result =
+      await client.query(
+        `
       UPDATE tickets
-      SET status = 'CLOSED', closed_at = NOW(), updated_at = NOW()
+      SET
+        status = 'CLOSED',
+        closed_at = NOW(),
+        updated_at = NOW()
       WHERE ticket_id = $1
       RETURNING *
       `,
-      [id]
-    );
+        [id]
+      );
 
     await client.query(
       `
       INSERT INTO status_histories (
-        ticket_id, old_status, new_status, changed_by, reason
+        ticket_id,
+        old_status,
+        new_status,
+        changed_by,
+        reason
       )
-      VALUES ($1, 'RESOLVED', 'CLOSED', $2, $3)
+      VALUES (
+        $1,
+        'RESOLVED',
+        'CLOSED',
+        $2,
+        $3
+      )
       `,
-      [id, req.user.user_id, "Resolution confirmed by reporter"]
+      [
+        id,
+        req.user.user_id,
+        "Resolution confirmed by reporter",
+      ]
     );
 
     await client.query(
       `
       INSERT INTO ticket_events (
-        ticket_id, event_type, actor_user_id, event_data
+        ticket_id,
+        event_type,
+        actor_user_id,
+        event_data
       )
-      VALUES ($1, 'STATUS_CHANGED', $2, $3::jsonb)
+      VALUES (
+        $1,
+        'STATUS_CHANGED',
+        $2,
+        $3::jsonb
+      )
       `,
       [
         id,
         req.user.user_id,
         JSON.stringify({
-          old_status: "RESOLVED",
-          new_status: "CLOSED",
-          reason: "Resolution confirmed by reporter",
+          old_status:
+            "RESOLVED",
+          new_status:
+            "CLOSED",
+          reason:
+            "Resolution confirmed by reporter",
         }),
       ]
     );
 
     await writeAuditLog({
       client,
-      actorUserId: req.user.user_id,
-      action: "TICKET_STATUS_CHANGED",
-      entityType: "TICKET",
+      actorUserId:
+        req.user.user_id,
+      action:
+        "TICKET_STATUS_CHANGED",
+      entityType:
+        "TICKET",
       entityId: id,
-      oldValues: { status: "RESOLVED" },
-      newValues: { status: "CLOSED" },
-      ipAddress: req.ip,
+      oldValues: {
+        status:
+          "RESOLVED",
+      },
+      newValues: {
+        status:
+          "CLOSED",
+      },
+      ipAddress:
+        req.ip,
     });
 
-    await client.query("COMMIT");
+    await client.query(
+      "COMMIT"
+    );
 
     try {
       await notifyStatusChanged({
-        recipientUserId: req.user.user_id,
-        ticketId: id,
-        referenceNumber: ticket.reference_number,
-        oldStatus: "RESOLVED",
-        newStatus: "CLOSED",
+        recipientUserId:
+          req.user.user_id,
+        ticketId:
+          id,
+        referenceNumber:
+          ticket.reference_number,
+        oldStatus:
+          "RESOLVED",
+        newStatus:
+          "CLOSED",
       });
-    } catch (notificationError) {
-      console.error("Confirmation notification error:", notificationError);
+    } catch (
+      notificationError
+    ) {
+      console.error(
+        "Confirmation notification error:",
+        notificationError
+      );
     }
 
     return res.status(200).json({
       success: true,
-      message: "Resolution confirmed successfully",
-      data: result.rows[0],
+      message:
+        "Resolution confirmed successfully",
+      data:
+        result.rows[0],
     });
   } catch (error) {
-    await client.query("ROLLBACK");
-    console.error("Confirm resolution error:", error);
+    await client.query(
+      "ROLLBACK"
+    );
+
+    console.error(
+      "Confirm resolution error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
-      message: "Failed to confirm resolution",
+      message:
+        "Failed to confirm resolution",
     });
   } finally {
     client.release();
@@ -1100,148 +1338,251 @@ const confirmResolution = async (req, res) => {
  *
  * A reporter can reopen a resolved ticket during the configured window.
  */
-const reopenTicket = async (req, res) => {
-  const client = await pool.connect();
+const reopenTicket = async (
+  req,
+  res
+) => {
+  const client =
+    await pool.connect();
 
   try {
-    const { id } = req.params;
-    const reopenWindowDays = Number(
-      process.env.TICKET_REOPEN_WINDOW_DAYS || 7
-    );
+    const { id } =
+      req.params;
 
-    const ticketResult = await client.query(
-      `
-      SELECT ticket_id, reporter_id, reference_number, status, resolved_at
+    const reopenWindowDays =
+      Number(
+        process.env.TICKET_REOPEN_WINDOW_DAYS ||
+          7
+      );
+
+    const ticketResult =
+      await client.query(
+        `
+      SELECT
+        ticket_id,
+        reporter_id,
+        reference_number,
+        status,
+        resolved_at
       FROM tickets
       WHERE ticket_id = $1
       `,
-      [id]
-    );
-
-    if (ticketResult.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Ticket not found",
-      });
-    }
-
-    const ticket = ticketResult.rows[0];
-
-    if (ticket.reporter_id !== req.user.user_id) {
-      return res.status(403).json({
-        success: false,
-        message: "Only the ticket reporter can reopen this ticket",
-      });
-    }
-
-    if (!["RESOLVED", "CLOSED"].includes(ticket.status)) {
-      return res.status(409).json({
-        success: false,
-        message: "Only resolved or closed tickets can be reopened",
-      });
-    }
-
-    const oldStatus = ticket.status;
-
-    const resolvedAt = ticket.resolved_at
-      ? new Date(ticket.resolved_at).getTime()
-      : NaN;
-    const windowMilliseconds =
-      reopenWindowDays * 24 * 60 * 60 * 1000;
+        [id]
+      );
 
     if (
-      !Number.isFinite(resolvedAt) ||
-      Date.now() - resolvedAt > windowMilliseconds
+      ticketResult.rows.length === 0
+    ) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Ticket not found",
+      });
+    }
+
+    const ticket =
+      ticketResult.rows[0];
+
+    if (
+      ticket.reporter_id !==
+      req.user.user_id
+    ) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Only the ticket reporter can reopen this ticket",
+      });
+    }
+
+    if (
+      ![
+        "RESOLVED",
+        "CLOSED",
+      ].includes(ticket.status)
     ) {
       return res.status(409).json({
         success: false,
-        message: "The ticket reopening period has expired",
-        reopening_period_days: reopenWindowDays,
+        message:
+          "Only resolved or closed tickets can be reopened",
       });
     }
 
-    await client.query("BEGIN");
+    const oldStatus =
+      ticket.status;
 
-    const result = await client.query(
-      `
+    const resolvedAt =
+      ticket.resolved_at
+        ? new Date(
+            ticket.resolved_at
+          ).getTime()
+        : NaN;
+
+    const windowMilliseconds =
+      reopenWindowDays *
+      24 *
+      60 *
+      60 *
+      1000;
+
+    if (
+      !Number.isFinite(
+        resolvedAt
+      ) ||
+      Date.now() -
+        resolvedAt >
+        windowMilliseconds
+    ) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "The ticket reopening period has expired",
+        reopening_period_days:
+          reopenWindowDays,
+      });
+    }
+
+    await client.query(
+      "BEGIN"
+    );
+
+    const result =
+      await client.query(
+        `
       UPDATE tickets
-      SET status = 'REOPENED', resolved_at = NULL, closed_at = NULL, updated_at = NOW()
+      SET
+        status = 'REOPENED',
+        resolved_at = NULL,
+        closed_at = NULL,
+        updated_at = NOW()
       WHERE ticket_id = $1
       RETURNING *
       `,
-      [id]
-    );
+        [id]
+      );
 
     await client.query(
       `
       INSERT INTO status_histories (
-        ticket_id, old_status, new_status, changed_by, reason
+        ticket_id,
+        old_status,
+        new_status,
+        changed_by,
+        reason
       )
-      VALUES ($1, $2, 'REOPENED', $3, $4)
+      VALUES (
+        $1,
+        $2,
+        'REOPENED',
+        $3,
+        $4
+      )
       `,
       [
         id,
         oldStatus,
         req.user.user_id,
-        req.body.reason || "Ticket reopened by reporter",
+        req.body.reason ||
+          "Ticket reopened by reporter",
       ]
     );
 
     await client.query(
       `
       INSERT INTO ticket_events (
-        ticket_id, event_type, actor_user_id, event_data
+        ticket_id,
+        event_type,
+        actor_user_id,
+        event_data
       )
-      VALUES ($1, 'REOPENED', $2, $3::jsonb)
+      VALUES (
+        $1,
+        'REOPENED',
+        $2,
+        $3::jsonb
+      )
       `,
       [
         id,
         req.user.user_id,
         JSON.stringify({
-          old_status: oldStatus,
-          new_status: "REOPENED",
-          reason: req.body.reason || "Ticket reopened by reporter",
+          old_status:
+            oldStatus,
+          new_status:
+            "REOPENED",
+          reason:
+            req.body.reason ||
+            "Ticket reopened by reporter",
         }),
       ]
     );
 
     await writeAuditLog({
       client,
-      actorUserId: req.user.user_id,
-      action: "TICKET_STATUS_CHANGED",
-      entityType: "TICKET",
+      actorUserId:
+        req.user.user_id,
+      action:
+        "TICKET_STATUS_CHANGED",
+      entityType:
+        "TICKET",
       entityId: id,
-      oldValues: { status: oldStatus },
-      newValues: { status: "REOPENED" },
-      ipAddress: req.ip,
+      oldValues: {
+        status:
+          oldStatus,
+      },
+      newValues: {
+        status:
+          "REOPENED",
+      },
+      ipAddress:
+        req.ip,
     });
 
-    await client.query("COMMIT");
+    await client.query(
+      "COMMIT"
+    );
 
     try {
       await notifyStatusChanged({
-        recipientUserId: req.user.user_id,
-        ticketId: id,
-        referenceNumber: ticket.reference_number,
+        recipientUserId:
+          req.user.user_id,
+        ticketId:
+          id,
+        referenceNumber:
+          ticket.reference_number,
         oldStatus,
-        newStatus: "REOPENED",
+        newStatus:
+          "REOPENED",
       });
-    } catch (notificationError) {
-      console.error("Reopen notification error:", notificationError);
+    } catch (
+      notificationError
+    ) {
+      console.error(
+        "Reopen notification error:",
+        notificationError
+      );
     }
 
     return res.status(200).json({
       success: true,
-      message: "Ticket reopened successfully",
-      data: result.rows[0],
+      message:
+        "Ticket reopened successfully",
+      data:
+        result.rows[0],
     });
   } catch (error) {
-    await client.query("ROLLBACK");
-    console.error("Reopen ticket error:", error);
+    await client.query(
+      "ROLLBACK"
+    );
+
+    console.error(
+      "Reopen ticket error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
-      message: "Failed to reopen ticket",
+      message:
+        "Failed to reopen ticket",
     });
   } finally {
     client.release();
