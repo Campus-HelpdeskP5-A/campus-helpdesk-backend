@@ -2221,18 +2221,56 @@ const openapiDocument = {
     },
 
     "/api/sla/priority-matrix/resolve": {
-      get: {
-        tags: ["SLA"],
-        summary: "Resolve priority matrix",
-        security: [{ bearerAuth: [] }],
-        responses: {
-          200: {
-            description: "Priority matrix resolved successfully",
-          },
+  get: {
+    tags: ["SLA"],
+    summary: "Resolve priority matrix",
+    description:
+      "Resolve the configured priority and SLA profile using impact and urgency.",
+    security: [{ bearerAuth: [] }],
+
+    parameters: [
+      {
+        name: "impact",
+        in: "query",
+        required: true,
+        description: "Ticket impact level.",
+        schema: {
+          type: "string",
+          enum: ["LOW", "MEDIUM", "HIGH"],
         },
+        example: "HIGH",
+      },
+      {
+        name: "urgency",
+        in: "query",
+        required: true,
+        description: "Ticket urgency level.",
+        schema: {
+          type: "string",
+          enum: ["LOW", "MEDIUM", "HIGH"],
+        },
+        example: "HIGH",
+      },
+    ],
+
+    responses: {
+      200: {
+        description: "Priority matrix resolved successfully",
+      },
+      400: {
+        description:
+          "Impact and urgency are required or invalid.",
+      },
+      404: {
+        description:
+          "No matching active priority matrix entry found.",
+      },
+      500: {
+        description: "Server error",
       },
     },
-
+  },
+},
     "/api/sla/priority-matrix/{id}": {
       put: {
         tags: ["SLA"],

@@ -22,6 +22,7 @@ const VALID_PRIORITIES = [
 const {
   getCanonicalPriority,
 } = require("../utils/priorityMatrix");
+
 const {
   evaluateSlaExecutions,
 } = require("../services/sla.service");
@@ -38,7 +39,10 @@ const validateDays = (days) => {
   if (
     new Set(dayNumbers).size !== 7 ||
     !dayNumbers.every(
-      (day) => Number.isInteger(day) && day >= 0 && day <= 6
+      (day) =>
+        Number.isInteger(day) &&
+        day >= 0 &&
+        day <= 6
     )
   ) {
     return (
@@ -71,19 +75,25 @@ const validateDays = (days) => {
 // POST /api/sla/evaluate
 const evaluateSla = async (req, res) => {
   try {
-    const statistics = await evaluateSlaExecutions();
+    const statistics =
+      await evaluateSlaExecutions();
 
     return res.status(200).json({
       success: true,
-      message: "SLA evaluation completed successfully",
+      message:
+        "SLA evaluation completed successfully",
       data: statistics,
     });
   } catch (error) {
-    console.error("Evaluate SLA error:", error);
+    console.error(
+      "Evaluate SLA error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
-      message: "Failed to evaluate SLA executions",
+      message:
+        "Failed to evaluate SLA executions",
     });
   }
 };
@@ -157,7 +167,10 @@ const getBusinessHours = async (req, res) => {
 };
 
 // GET /api/sla/business-hours/:id
-const getBusinessHoursById = async (req, res) => {
+const getBusinessHoursById = async (
+  req,
+  res
+) => {
   try {
     const { id } = req.params;
 
@@ -220,7 +233,10 @@ const getBusinessHoursById = async (req, res) => {
 };
 
 // POST /api/sla/business-hours
-const createBusinessHours = async (req, res) => {
+const createBusinessHours = async (
+  req,
+  res
+) => {
   const client = await pool.connect();
 
   try {
@@ -365,7 +381,10 @@ const createBusinessHours = async (req, res) => {
 };
 
 // PUT /api/sla/business-hours/:id
-const updateBusinessHours = async (req, res) => {
+const updateBusinessHours = async (
+  req,
+  res
+) => {
   const client = await pool.connect();
 
   try {
@@ -395,9 +414,7 @@ const updateBusinessHours = async (req, res) => {
       });
     }
 
-    if (
-      days !== undefined
-    ) {
+    if (days !== undefined) {
       const daysError =
         validateDays(days);
 
@@ -410,16 +427,17 @@ const updateBusinessHours = async (req, res) => {
     }
 
     if (name !== undefined) {
-      const duplicate = await client.query(
-        `
-        SELECT business_hours_id
-        FROM business_hours
-        WHERE name = $1
-          AND business_hours_id <> $2
-        LIMIT 1
-        `,
-        [name, id]
-      );
+      const duplicate =
+        await client.query(
+          `
+          SELECT business_hours_id
+          FROM business_hours
+          WHERE name = $1
+            AND business_hours_id <> $2
+          LIMIT 1
+          `,
+          [name, id]
+        );
 
       if (duplicate.rows.length > 0) {
         return res.status(409).json({
@@ -552,7 +570,10 @@ const updateBusinessHours = async (req, res) => {
 */
 
 // GET /api/sla/profiles
-const getSlaProfiles = async (req, res) => {
+const getSlaProfiles = async (
+  req,
+  res
+) => {
   try {
     const result = await pool.query(`
       SELECT
@@ -593,7 +614,10 @@ const getSlaProfiles = async (req, res) => {
 };
 
 // GET /api/sla/profiles/:id
-const getSlaProfileById = async (req, res) => {
+const getSlaProfileById = async (
+  req,
+  res
+) => {
   try {
     const { id } = req.params;
 
@@ -647,7 +671,10 @@ const getSlaProfileById = async (req, res) => {
 };
 
 // POST /api/sla/profiles
-const createSlaProfile = async (req, res) => {
+const createSlaProfile = async (
+  req,
+  res
+) => {
   try {
     const {
       name,
@@ -659,8 +686,10 @@ const createSlaProfile = async (req, res) => {
 
     if (
       !name ||
-      response_target_minutes === undefined ||
-      resolution_target_minutes === undefined ||
+      response_target_minutes ===
+        undefined ||
+      resolution_target_minutes ===
+        undefined ||
       !business_hours_id
     ) {
       return res.status(400).json({
@@ -679,7 +708,9 @@ const createSlaProfile = async (req, res) => {
     );
 
     if (
-      !Number.isInteger(responseTarget) ||
+      !Number.isInteger(
+        responseTarget
+      ) ||
       responseTarget <= 0
     ) {
       return res.status(400).json({
@@ -690,7 +721,9 @@ const createSlaProfile = async (req, res) => {
     }
 
     if (
-      !Number.isInteger(resolutionTarget) ||
+      !Number.isInteger(
+        resolutionTarget
+      ) ||
       resolutionTarget <= 0
     ) {
       return res.status(400).json({
@@ -721,15 +754,16 @@ const createSlaProfile = async (req, res) => {
       });
     }
 
-    const duplicate = await pool.query(
-      `
-      SELECT sla_profile_id
-      FROM sla_profiles
-      WHERE name = $1
-      LIMIT 1
-      `,
-      [name]
-    );
+    const duplicate =
+      await pool.query(
+        `
+        SELECT sla_profile_id
+        FROM sla_profiles
+        WHERE name = $1
+        LIMIT 1
+        `,
+        [name]
+      );
 
     if (duplicate.rows.length > 0) {
       return res.status(409).json({
@@ -789,7 +823,10 @@ const createSlaProfile = async (req, res) => {
 };
 
 // PUT /api/sla/profiles/:id
-const updateSlaProfile = async (req, res) => {
+const updateSlaProfile = async (
+  req,
+  res
+) => {
   try {
     const { id } = req.params;
 
@@ -821,13 +858,19 @@ const updateSlaProfile = async (req, res) => {
     const current = existing.rows[0];
 
     const finalResponse =
-      response_target_minutes !== undefined
-        ? Number(response_target_minutes)
+      response_target_minutes !==
+      undefined
+        ? Number(
+            response_target_minutes
+          )
         : current.response_target_minutes;
 
     const finalResolution =
-      resolution_target_minutes !== undefined
-        ? Number(resolution_target_minutes)
+      resolution_target_minutes !==
+      undefined
+        ? Number(
+            resolution_target_minutes
+          )
         : current.resolution_target_minutes;
 
     const finalBusinessHours =
@@ -845,7 +888,9 @@ const updateSlaProfile = async (req, res) => {
         : current.is_active;
 
     if (
-      !Number.isInteger(finalResponse) ||
+      !Number.isInteger(
+        finalResponse
+      ) ||
       finalResponse <= 0
     ) {
       return res.status(400).json({
@@ -856,7 +901,9 @@ const updateSlaProfile = async (req, res) => {
     }
 
     if (
-      !Number.isInteger(finalResolution) ||
+      !Number.isInteger(
+        finalResolution
+      ) ||
       finalResolution <= 0
     ) {
       return res.status(400).json({
@@ -888,7 +935,8 @@ const updateSlaProfile = async (req, res) => {
     }
 
     if (
-      !businessHours.rows[0].is_active &&
+      !businessHours.rows[0]
+        .is_active &&
       finalActive
     ) {
       return res.status(400).json({
@@ -898,16 +946,17 @@ const updateSlaProfile = async (req, res) => {
       });
     }
 
-    const duplicate = await pool.query(
-      `
-      SELECT sla_profile_id
-      FROM sla_profiles
-      WHERE name = $1
-        AND sla_profile_id <> $2
-      LIMIT 1
-      `,
-      [finalName, id]
-    );
+    const duplicate =
+      await pool.query(
+        `
+        SELECT sla_profile_id
+        FROM sla_profiles
+        WHERE name = $1
+          AND sla_profile_id <> $2
+        LIMIT 1
+        `,
+        [finalName, id]
+      );
 
     if (duplicate.rows.length > 0) {
       return res.status(409).json({
@@ -975,7 +1024,10 @@ const updateSlaProfile = async (req, res) => {
 */
 
 // GET /api/sla/priority-matrix
-const getPriorityMatrix = async (req, res) => {
+const getPriorityMatrix = async (
+  req,
+  res
+) => {
   try {
     const result = await pool.query(`
       SELECT
@@ -1023,7 +1075,10 @@ const getPriorityMatrix = async (req, res) => {
 };
 
 // GET /api/sla/priority-matrix/resolve
-const resolvePriority = async (req, res) => {
+const resolvePriority = async (
+  req,
+  res
+) => {
   try {
     const {
       impact,
@@ -1202,17 +1257,22 @@ const createPriorityMatrix = async (
       });
     }
 
-    const expectedPriority = getCanonicalPriority(
-      normalizedImpact,
-      normalizedUrgency
-    );
+    const expectedPriority =
+      getCanonicalPriority(
+        normalizedImpact,
+        normalizedUrgency
+      );
 
-    if (expectedPriority !== normalizedPriority) {
+    if (
+      expectedPriority !==
+      normalizedPriority
+    ) {
       return res.status(400).json({
         success: false,
         message:
           "Priority does not match the configured impact and urgency matrix",
-        expected_priority: expectedPriority,
+        expected_priority:
+          expectedPriority,
       });
     }
 
@@ -1318,19 +1378,35 @@ const updatePriorityMatrix = async (
   try {
     const { id } = req.params;
 
+    // Prevent req.body from causing an error
+    // when no body is sent.
+    const body = req.body || {};
+
     const {
       impact,
       urgency,
       priority,
       sla_profile_id,
       is_active,
-    } = req.body;
+    } = body;
+
+    // ---------------------------------------------------------
+    // 1. Find existing priority matrix entry
+    // ---------------------------------------------------------
 
     const existing = await pool.query(
       `
-      SELECT *
+      SELECT
+        priority_matrix_id,
+        impact,
+        urgency,
+        priority,
+        sla_profile_id,
+        is_active,
+        created_at
       FROM priority_matrices
       WHERE priority_matrix_id = $1
+      LIMIT 1
       `,
       [id]
     );
@@ -1345,29 +1421,44 @@ const updatePriorityMatrix = async (
 
     const current = existing.rows[0];
 
+    // ---------------------------------------------------------
+    // 2. Keep current values when fields are not provided
+    // ---------------------------------------------------------
+
     const finalImpact =
-      impact !== undefined
-        ? impact.toUpperCase()
+      impact !== undefined &&
+      impact !== null
+        ? String(impact).toUpperCase()
         : current.impact;
 
     const finalUrgency =
-      urgency !== undefined
-        ? urgency.toUpperCase()
+      urgency !== undefined &&
+      urgency !== null
+        ? String(urgency).toUpperCase()
         : current.urgency;
 
     const finalPriority =
-      priority !== undefined
-        ? priority.toUpperCase()
+      priority !== undefined &&
+      priority !== null
+        ? String(priority).toUpperCase()
         : current.priority;
 
     const finalSla =
-      sla_profile_id ??
-      current.sla_profile_id;
+      sla_profile_id !== undefined &&
+      sla_profile_id !== null &&
+      sla_profile_id !== ""
+        ? sla_profile_id
+        : current.sla_profile_id;
 
     const finalActive =
-      is_active !== undefined
+      is_active !== undefined &&
+      is_active !== null
         ? is_active
         : current.is_active;
+
+    // ---------------------------------------------------------
+    // 3. Validate impact
+    // ---------------------------------------------------------
 
     if (
       !VALID_IMPACTS.includes(
@@ -1378,8 +1469,14 @@ const updatePriorityMatrix = async (
         success: false,
         message:
           "Invalid impact",
+        allowed_values:
+          VALID_IMPACTS,
       });
     }
+
+    // ---------------------------------------------------------
+    // 4. Validate urgency
+    // ---------------------------------------------------------
 
     if (
       !VALID_URGENCIES.includes(
@@ -1390,8 +1487,14 @@ const updatePriorityMatrix = async (
         success: false,
         message:
           "Invalid urgency",
+        allowed_values:
+          VALID_URGENCIES,
       });
     }
+
+    // ---------------------------------------------------------
+    // 5. Validate priority
+    // ---------------------------------------------------------
 
     if (
       !VALID_PRIORITIES.includes(
@@ -1402,22 +1505,37 @@ const updatePriorityMatrix = async (
         success: false,
         message:
           "Invalid priority",
+        allowed_values:
+          VALID_PRIORITIES,
       });
     }
 
-    const expectedPriority = getCanonicalPriority(
-      finalImpact,
-      finalUrgency
-    );
+    // ---------------------------------------------------------
+    // 6. Validate canonical priority
+    // ---------------------------------------------------------
 
-    if (expectedPriority !== finalPriority) {
+    const expectedPriority =
+      getCanonicalPriority(
+        finalImpact,
+        finalUrgency
+      );
+
+    if (
+      expectedPriority !==
+      finalPriority
+    ) {
       return res.status(400).json({
         success: false,
         message:
           "Priority does not match the configured impact and urgency matrix",
-        expected_priority: expectedPriority,
+        expected_priority:
+          expectedPriority,
       });
     }
+
+    // ---------------------------------------------------------
+    // 7. Check SLA profile
+    // ---------------------------------------------------------
 
     const sla = await pool.query(
       `
@@ -1439,6 +1557,10 @@ const updatePriorityMatrix = async (
       });
     }
 
+    // ---------------------------------------------------------
+    // 8. Active matrix requires active SLA profile
+    // ---------------------------------------------------------
+
     if (
       finalActive &&
       !sla.rows[0].is_active
@@ -1449,6 +1571,10 @@ const updatePriorityMatrix = async (
           "An active priority matrix entry must use an active SLA profile",
       });
     }
+
+    // ---------------------------------------------------------
+    // 9. Prevent duplicate matrix entries
+    // ---------------------------------------------------------
 
     const duplicate =
       await pool.query(
@@ -1477,6 +1603,10 @@ const updatePriorityMatrix = async (
           "Another priority matrix entry already exists for this impact and urgency with the same active state",
       });
     }
+
+    // ---------------------------------------------------------
+    // 10. Update database
+    // ---------------------------------------------------------
 
     const result = await pool.query(
       `
@@ -1542,5 +1672,6 @@ module.exports = {
   resolvePriority,
   createPriorityMatrix,
   updatePriorityMatrix,
+
   evaluateSla,
 };
