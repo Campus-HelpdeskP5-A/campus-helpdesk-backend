@@ -480,6 +480,10 @@ WHERE is_active = TRUE;
 -- 12. TICKETS
 -- =========================================================
 
+CREATE SEQUENCE IF NOT EXISTS ticket_reference_seq
+    START WITH 1
+    INCREMENT BY 1;
+
 CREATE TABLE tickets (
     ticket_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
@@ -1515,8 +1519,8 @@ ON audit_logs(created_at);
 CREATE INDEX idx_audit_logs_action
 ON audit_logs(action);
 
+
 -- =========================================================
 -- END OF FINAL HLP DATABASE SCHEMA
 -- 26 ENTITIES
 -- =========================================================
-

@@ -147,6 +147,21 @@ const steps = [
   rename("attachments", "file_type", "mime_type"),
   rename("attachments", "file_path", "storage_path"),
   rename("priority_matrices", "matrix_id", "priority_matrix_id"),
+  rename("priority_matrices", "id", "priority_matrix_id"),
+  // Self-heal for Neon drift: ticket_reference_seq must exist because
+  // ticket.controller.js createTicket() calls nextval('ticket_reference_seq').
+  // schema.sql defines it, but live DBs created without full schema.sql miss it (42P01).
+  `CREATE SEQUENCE IF NOT EXISTS ticket_reference_seq START WITH 1 INCREMENT BY 1`,
+  // Advance the sequence past existing HLP-XXXXXX numbers so new tickets
+  // never collide with seeded/manual rows (which use HLP-0001..HLP-0036).
+  `SELECT setval(
+    'ticket_reference_seq',
+    COALESCE(
+      (SELECT MAX(NULLIF(regexp_replace(reference_number, '[^0-9]', '', 'g'), '')::int) FROM tickets),
+      0
+    ) + 1,
+    false
+  )`,
   // Missing columns used by the backend.
   `ALTER TABLE user_teams ADD COLUMN IF NOT EXISTS left_at TIMESTAMPTZ`,
   `ALTER TABLE tickets ADD COLUMN IF NOT EXISTS response_due_at TIMESTAMPTZ`,

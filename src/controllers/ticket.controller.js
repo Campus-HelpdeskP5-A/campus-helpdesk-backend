@@ -740,19 +740,60 @@ const createTicket = async (req, res) => {
     });
 
     /**
-     * 5. Generate reference number
+     * 5. Generate reference number (self-healing if the sequence is missing
+     * on Neon — error 42P01 relation "ticket_reference_seq" does not exist).
      */
-    const referenceResult =
-      await client.query(
+    let nextNumber;
+
+    try {
+      const referenceResult =
+        await client.query(
+          `
+        SELECT nextval('public.ticket_reference_seq') AS next_number
         `
-        SELECT nextval('ticket_reference_seq') AS next_number
+        );
+
+      nextNumber = Number(
+        referenceResult.rows[0].next_number
+      );
+    } catch (seqError) {
+      if (seqError.code !== "42P01") {
+        throw seqError;
+      }
+
+      await client.query(
+        `CREATE SEQUENCE IF NOT EXISTS ticket_reference_seq START WITH 1 INCREMENT BY 1`
+      );
+
+      const maxResult = await client.query(
+        `
+        SELECT COALESCE(
+          MAX(NULLIF(regexp_replace(reference_number, '[^0-9]', '', 'g'), '')::int),
+          0
+        ) AS max_num
+        FROM tickets
         `
       );
 
-    const nextNumber =
-      Number(
-        referenceResult.rows[0].next_number
+      const maxNum =
+        Number(maxResult.rows[0].max_num) || 0;
+
+      await client.query(
+        `SELECT setval('ticket_reference_seq', $1, false)`,
+        [maxNum + 1]
       );
+
+      const retryResult =
+        await client.query(
+          `
+        SELECT nextval('ticket_reference_seq') AS next_number
+        `
+        );
+
+      nextNumber = Number(
+        retryResult.rows[0].next_number
+      );
+    }
 
     const referenceNumber =
       `HLP-${String(nextNumber).padStart(6, "0")}`;
