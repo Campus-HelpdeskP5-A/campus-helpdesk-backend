@@ -592,6 +592,32 @@ const createTicket = async (req, res) => {
      */
     const reporterId = req.user.user_id;
 
+    /**
+     * Ensure the reference-number sequence BEFORE the transaction starts.
+     * Recovery queries cannot run inside an aborted transaction (Postgres
+     * rejects every command after the first failure with 25P02), so the
+     * sequence must already exist when nextval() runs below.
+     * setval() only ever moves the sequence forward, so concurrent
+     * requests can never receive duplicate numbers from this.
+     */
+    await client.query(
+      `CREATE SEQUENCE IF NOT EXISTS ticket_reference_seq START WITH 1 INCREMENT BY 1`
+    );
+
+    await client.query(
+      `SELECT setval(
+         'ticket_reference_seq',
+         GREATEST(
+           (SELECT last_value FROM ticket_reference_seq),
+           COALESCE(
+             (SELECT MAX(NULLIF(regexp_replace(reference_number, '[^0-9]', '', 'g'), '')::int) FROM tickets),
+             0
+           )
+         ),
+         true
+       )`
+    );
+
     await client.query("BEGIN");
 
     /**
@@ -742,60 +768,23 @@ const createTicket = async (req, res) => {
     });
 
     /**
-     * 5. Generate reference number (self-healing if the sequence is missing
-     * on Neon — error 42P01 relation "ticket_reference_seq" does not exist).
+     * 5. Generate reference number.
+     *
+     * The sequence is guaranteed to exist (ensured above, before BEGIN),
+     * so this is a plain nextval with no recovery logic: recovery inside
+     * the transaction would hit an aborted transaction (25P02).
      */
-    let nextNumber;
-
-    try {
-      const referenceResult =
-        await client.query(
-          `
+    const referenceResult =
+      await client.query(
+        `
         SELECT nextval('public.ticket_reference_seq') AS next_number
         `
-        );
+      );
 
-      nextNumber = Number(
+    const nextNumber =
+      Number(
         referenceResult.rows[0].next_number
       );
-    } catch (seqError) {
-      if (seqError.code !== "42P01") {
-        throw seqError;
-      }
-
-      await client.query(
-        `CREATE SEQUENCE IF NOT EXISTS ticket_reference_seq START WITH 1 INCREMENT BY 1`
-      );
-
-      const maxResult = await client.query(
-        `
-        SELECT COALESCE(
-          MAX(NULLIF(regexp_replace(reference_number, '[^0-9]', '', 'g'), '')::int),
-          0
-        ) AS max_num
-        FROM tickets
-        `
-      );
-
-      const maxNum =
-        Number(maxResult.rows[0].max_num) || 0;
-
-      await client.query(
-        `SELECT setval('ticket_reference_seq', $1, false)`,
-        [maxNum + 1]
-      );
-
-      const retryResult =
-        await client.query(
-          `
-        SELECT nextval('ticket_reference_seq') AS next_number
-        `
-        );
-
-      nextNumber = Number(
-        retryResult.rows[0].next_number
-      );
-    }
 
     const referenceNumber =
       `HLP-${String(nextNumber).padStart(6, "0")}`;
