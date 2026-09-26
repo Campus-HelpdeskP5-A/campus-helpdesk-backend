@@ -66,6 +66,22 @@ const isValidUUID = (value) => {
 };
 
 /**
+ * Loose UUID shape check (8-4-4-4-12 hex).
+ *
+ * Used for asset_id so that every value the
+ * database accepts as a UUID is treated as a UUID
+ * (seeded assets use non v1-v5 version/variant
+ * nibbles), while anything else is treated as an
+ * asset tag.
+ */
+const isUuidFormat = (value) => {
+  const uuidShapeRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  return uuidShapeRegex.test(value);
+};
+
+/**
  * Return 400 when a ticket ID is not a valid UUID.
  */
 const validateTicketId = (id, res) => {
@@ -501,27 +517,57 @@ const createTicket = async (req, res) => {
     }
 
     /**
-     * Asset ID is optional.
+     * Asset is optional.
      *
-     * Empty string is treated as NULL.
-     * If a value is provided, it must be a valid UUID.
+     * Accepted forms:
+     * - empty / null / undefined -> no asset
+     * - a valid UUID             -> must exist in assets
+     *                                 (checked in step 3)
+     * - any other text           -> matched against
+     *                                 assets.asset_tag
+     *                                 (case-insensitive)
+     *
+     * An unknown asset tag never blocks ticket
+     * creation: the ticket is stored without an
+     * asset and a warning is returned instead.
      */
-    const normalizedAssetId =
-      asset_id === "" ||
-      asset_id === undefined ||
-      asset_id === null
+    const rawAssetValue =
+      asset_id === null ||
+      asset_id === undefined
         ? null
-        : asset_id;
+        : String(asset_id).trim();
+
+    let normalizedAssetId =
+      rawAssetValue === ""
+        ? null
+        : rawAssetValue;
+
+    let assetWarning = null;
 
     if (
       normalizedAssetId !== null &&
-      !isValidUUID(normalizedAssetId)
+      !isUuidFormat(normalizedAssetId)
     ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "asset_id must be a valid UUID when provided",
-      });
+      const assetTagResult = await pool.query(
+        `
+        SELECT asset_id
+        FROM assets
+        WHERE LOWER(asset_tag) = LOWER($1)
+        LIMIT 1
+        `,
+        [normalizedAssetId]
+      );
+
+      if (assetTagResult.rows.length > 0) {
+        normalizedAssetId =
+          assetTagResult.rows[0].asset_id;
+      } else {
+        assetWarning =
+          `Asset "${normalizedAssetId}" was not found. ` +
+          "The ticket was created without an asset.";
+
+        normalizedAssetId = null;
+      }
     }
 
     /**
@@ -606,8 +652,9 @@ const createTicket = async (req, res) => {
     /**
      * 3. Validate Asset if provided
      *
-     * Asset endpoint is not implemented yet,
-     * so the field remains optional.
+     * At this point normalizedAssetId is either
+     * NULL or a real UUID (asset tags were resolved
+     * before the transaction started).
      */
     if (normalizedAssetId !== null) {
       const assetResult = await client.query(
@@ -999,6 +1046,7 @@ const createTicket = async (req, res) => {
           calculatedPriority,
         attachments_count:
           attachments.length,
+        asset_warning: assetWarning,
         sla: {
           sla_profile_id:
             matrix.sla_profile_id,

@@ -118,8 +118,8 @@ router.get(
  *                 format: uuid
  *               asset_id:
  *                 type: string
- *                 format: uuid
  *                 nullable: true
+ *                 description: Asset UUID or asset tag (e.g. PC-LAB101-01). Unknown values do not block creation; the ticket is then stored without an asset and a warning is returned.
  *               title:
  *                 type: string
  *               description:
