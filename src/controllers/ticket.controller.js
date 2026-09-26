@@ -466,9 +466,11 @@ const getTicketById = async (req, res) => {
  * POST /api/tickets
  */
 const createTicket = async (req, res) => {
-  const client = await pool.connect();
+  let client;
 
   try {
+    client = await pool.connect();
+
     const {
       category_id,
       location_id,
@@ -1110,7 +1112,11 @@ const createTicket = async (req, res) => {
       },
     });
   } catch (error) {
-    await client.query("ROLLBACK");
+    if (client) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (_) {}
+    }
 
     console.error(
       "Create ticket error:",
@@ -1139,7 +1145,9 @@ const createTicket = async (req, res) => {
         "Failed to create ticket",
     });
   } finally {
-    client.release();
+    if (client) {
+      client.release();
+    }
   }
 };
 
