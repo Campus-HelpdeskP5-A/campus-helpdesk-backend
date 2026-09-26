@@ -57,9 +57,6 @@ const VALID_STATUSES = VALID_TICKET_STATUSES;
 
 /**
  * Validate UUID format.
- *
- * This prevents invalid UUID values from reaching PostgreSQL
- * and causing an HTTP 500 error.
  */
 const isValidUUID = (value) => {
   const uuidRegex =
@@ -86,13 +83,6 @@ const validateTicketId = (id, res) => {
 
 /**
  * GET /api/tickets
- *
- * Access:
- * - REPORTER: own tickets only
- * - AGENT: tickets assigned to them or their active teams
- * - TECHNICIAN: tickets assigned to them or their active teams
- * - MANAGER: all tickets
- * - AUDITOR: all tickets (read-only)
  */
 const getTickets = async (req, res) => {
   try {
@@ -125,9 +115,6 @@ const getTickets = async (req, res) => {
     const conditions = [accessFilter.clause];
     const values = [...accessFilter.values];
 
-    /**
-     * Filter by status
-     */
     if (status) {
       if (!VALID_STATUSES.includes(status)) {
         return res.status(400).json({
@@ -144,9 +131,6 @@ const getTickets = async (req, res) => {
       );
     }
 
-    /**
-     * Filter by priority
-     */
     if (priority) {
       if (!VALID_PRIORITIES.includes(priority)) {
         return res.status(400).json({
@@ -163,9 +147,6 @@ const getTickets = async (req, res) => {
       );
     }
 
-    /**
-     * Filter by category
-     */
     if (category_id) {
       values.push(category_id);
 
@@ -174,40 +155,72 @@ const getTickets = async (req, res) => {
       );
     }
 
-    /** Filter by current support team assignment */
     if (team_id) {
       values.push(team_id);
-      conditions.push("EXISTS (SELECT 1 FROM assignments af WHERE af.ticket_id = t.ticket_id AND af.is_current = TRUE AND af.assigned_team_id = $" + values.length + ")");
+
+      conditions.push(
+        `EXISTS (
+          SELECT 1
+          FROM assignments af
+          WHERE af.ticket_id = t.ticket_id
+            AND af.is_current = TRUE
+            AND af.assigned_team_id = $${values.length}
+        )`
+      );
     }
 
-    /** Filter by current assignee */
     if (assignee_id) {
       values.push(assignee_id);
-      conditions.push("EXISTS (SELECT 1 FROM assignments af WHERE af.ticket_id = t.ticket_id AND af.is_current = TRUE AND af.assigned_to = $" + values.length + ")");
+
+      conditions.push(
+        `EXISTS (
+          SELECT 1
+          FROM assignments af
+          WHERE af.ticket_id = t.ticket_id
+            AND af.is_current = TRUE
+            AND af.assigned_to = $${values.length}
+        )`
+      );
     }
 
-    /** Filter by location */
     if (location_id) {
       values.push(location_id);
-      conditions.push("t.location_id = $" + values.length);
+
+      conditions.push(
+        `t.location_id = $${values.length}`
+      );
     }
 
-    /** Filter by resolution due-time bucket */
     if (due) {
-      if (!["overdue", "today", "upcoming"].includes(due)) {
-        return res.status(400).json({ success: false, message: "Invalid due value", allowed_values: ["overdue", "today", "upcoming"] });
+      if (
+        !["overdue", "today", "upcoming"].includes(due)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid due value",
+          allowed_values: [
+            "overdue",
+            "today",
+            "upcoming",
+          ],
+        });
       }
+
       if (due === "overdue") {
-        conditions.push("t.resolution_due_at < NOW() AND t.status NOT IN ('RESOLVED', 'CLOSED')");
+        conditions.push(
+          "t.resolution_due_at < NOW() AND t.status NOT IN ('RESOLVED', 'CLOSED')"
+        );
       } else if (due === "today") {
-        conditions.push("t.resolution_due_at >= CURRENT_DATE AND t.resolution_due_at < CURRENT_DATE + INTERVAL '1 day'");
+        conditions.push(
+          "t.resolution_due_at >= CURRENT_DATE AND t.resolution_due_at < CURRENT_DATE + INTERVAL '1 day'"
+        );
       } else {
-        conditions.push("t.resolution_due_at >= CURRENT_DATE + INTERVAL '1 day'");
+        conditions.push(
+          "t.resolution_due_at >= CURRENT_DATE + INTERVAL '1 day'"
+        );
       }
     }
-    /**
-     * Pagination
-     */
+
     values.push(parsedLimit);
 
     const limitPlaceholder =
@@ -292,15 +305,20 @@ const getTickets = async (req, res) => {
     );
 
     const countResult = await pool.query(
-      `SELECT COUNT(*)::INTEGER AS total
-       FROM tickets t
-       JOIN users reporter ON reporter.user_id = t.reporter_id
-       JOIN categories c ON c.category_id = t.category_id
-       JOIN locations l ON l.location_id = t.location_id
-       LEFT JOIN assignments assignment
-         ON assignment.ticket_id = t.ticket_id
-        AND assignment.is_current = TRUE
-       WHERE ${conditions.join(" AND ")}`,
+      `
+      SELECT COUNT(*)::INTEGER AS total
+      FROM tickets t
+      JOIN users reporter
+        ON reporter.user_id = t.reporter_id
+      JOIN categories c
+        ON c.category_id = t.category_id
+      JOIN locations l
+        ON l.location_id = t.location_id
+      LEFT JOIN assignments assignment
+        ON assignment.ticket_id = t.ticket_id
+       AND assignment.is_current = TRUE
+      WHERE ${conditions.join(" AND ")}
+      `,
       values.slice(0, values.length - 2)
     );
 
@@ -329,21 +347,11 @@ const getTickets = async (req, res) => {
 
 /**
  * GET /api/tickets/:id
- *
- * Access:
- * - REPORTER: own ticket
- * - AGENT: assigned to them or their active team
- * - TECHNICIAN: assigned to them or their active team
- * - MANAGER: all
- * - AUDITOR: all
  */
 const getTicketById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    /**
-     * Validate UUID before querying PostgreSQL.
-     */
     if (!validateTicketId(id, res)) {
       return;
     }
@@ -456,6 +464,11 @@ const createTicket = async (req, res) => {
       attachments = [],
     } = req.body;
 
+    /**
+     * Required fields.
+     *
+     * asset_id is intentionally NOT required.
+     */
     if (
       !category_id ||
       !location_id ||
@@ -488,7 +501,31 @@ const createTicket = async (req, res) => {
     }
 
     /**
-     * Validate attachments format before opening transaction
+     * Asset ID is optional.
+     *
+     * Empty string is treated as NULL.
+     * If a value is provided, it must be a valid UUID.
+     */
+    const normalizedAssetId =
+      asset_id === "" ||
+      asset_id === undefined ||
+      asset_id === null
+        ? null
+        : asset_id;
+
+    if (
+      normalizedAssetId !== null &&
+      !isValidUUID(normalizedAssetId)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "asset_id must be a valid UUID when provided",
+      });
+    }
+
+    /**
+     * Validate attachments format before opening transaction.
      */
     if (!Array.isArray(attachments)) {
       return res.status(400).json({
@@ -503,7 +540,7 @@ const createTicket = async (req, res) => {
     });
 
     /**
-     * The authenticated user becomes the reporter.
+     * Authenticated user becomes reporter.
      */
     const reporterId = req.user.user_id;
 
@@ -567,7 +604,34 @@ const createTicket = async (req, res) => {
     }
 
     /**
-     * 3. Calculate priority + SLA
+     * 3. Validate Asset if provided
+     *
+     * Asset endpoint is not implemented yet,
+     * so the field remains optional.
+     */
+    if (normalizedAssetId !== null) {
+      const assetResult = await client.query(
+        `
+        SELECT asset_id
+        FROM assets
+        WHERE asset_id = $1
+        LIMIT 1
+        `,
+        [normalizedAssetId]
+      );
+
+      if (assetResult.rows.length === 0) {
+        await client.query("ROLLBACK");
+
+        return res.status(404).json({
+          success: false,
+          message: "Asset not found",
+        });
+      }
+    }
+
+    /**
+     * 4. Calculate priority + SLA
      */
     const matrixResult = await client.query(
       `
@@ -652,46 +716,46 @@ const createTicket = async (req, res) => {
     const ticketResult =
       await client.query(
         `
-      INSERT INTO tickets (
-        reference_number,
-        reporter_id,
-        category_id,
-        location_id,
-        asset_id,
-        sla_profile_id,
-        title,
-        description,
-        impact,
-        urgency,
-        priority,
-        status,
-        response_due_at,
-        resolution_due_at
-      )
-      VALUES (
-        $1,
-        $2,
-        $3,
-        $4,
-        $5,
-        $6,
-        $7,
-        $8,
-        $9,
-        $10,
-        $11,
-        $12,
-        $13,
-        $14
-      )
-      RETURNING *
-      `,
+        INSERT INTO tickets (
+          reference_number,
+          reporter_id,
+          category_id,
+          location_id,
+          asset_id,
+          sla_profile_id,
+          title,
+          description,
+          impact,
+          urgency,
+          priority,
+          status,
+          response_due_at,
+          resolution_due_at
+        )
+        VALUES (
+          $1,
+          $2,
+          $3,
+          $4,
+          $5,
+          $6,
+          $7,
+          $8,
+          $9,
+          $10,
+          $11,
+          $12,
+          $13,
+          $14
+        )
+        RETURNING *
+        `,
         [
           referenceNumber,
           reporterId,
           category_id,
           location_id,
-          asset_id || null,
+          normalizedAssetId,
           matrix.sla_profile_id,
           title,
           description,
@@ -992,10 +1056,6 @@ const createTicket = async (req, res) => {
 
 /**
  * PATCH /api/tickets/:id/triage
- *
- * Agent can update:
- * - category_id
- * - priority
  */
 const updateTicketTriage = async (
   req,
@@ -1006,9 +1066,6 @@ const updateTicketTriage = async (
   try {
     const { id } = req.params;
 
-    /**
-     * Validate UUID before querying PostgreSQL.
-     */
     if (!validateTicketId(id, res)) {
       return;
     }
@@ -1018,9 +1075,6 @@ const updateTicketTriage = async (
       priority,
     } = req.body;
 
-    /**
-     * 1. Validate request
-     */
     if (!category_id && !priority) {
       return res.status(400).json({
         success: false,
@@ -1029,9 +1083,6 @@ const updateTicketTriage = async (
       });
     }
 
-    /**
-     * 2. Agent only
-     */
     if (req.user.role !== "AGENT") {
       return res.status(403).json({
         success: false,
@@ -1040,9 +1091,6 @@ const updateTicketTriage = async (
       });
     }
 
-    /**
-     * 3. Check ticket triage access
-     */
     const access = await canTriageTicket(
       req.user,
       id
@@ -1056,20 +1104,17 @@ const updateTicketTriage = async (
       });
     }
 
-    /**
-     * 4. Get current ticket
-     */
     const ticketResult =
       await client.query(
         `
-      SELECT
-        ticket_id,
-        reference_number,
-        category_id,
-        priority
-      FROM tickets
-      WHERE ticket_id = $1
-      `,
+        SELECT
+          ticket_id,
+          reference_number,
+          category_id,
+          priority
+        FROM tickets
+        WHERE ticket_id = $1
+        `,
         [id]
       );
 
@@ -1083,9 +1128,6 @@ const updateTicketTriage = async (
     const ticket =
       ticketResult.rows[0];
 
-    /**
-     * 5. Validate category if provided
-     */
     if (category_id) {
       const categoryResult =
         await client.query(
@@ -1115,9 +1157,6 @@ const updateTicketTriage = async (
       }
     }
 
-    /**
-     * 6. Validate priority if provided
-     */
     if (
       priority &&
       !VALID_PRIORITIES.includes(priority)
@@ -1130,25 +1169,19 @@ const updateTicketTriage = async (
       });
     }
 
-    /**
-     * 7. Start transaction
-     */
     await client.query("BEGIN");
 
-    /**
-     * 8. Update ticket
-     */
     const result =
       await client.query(
         `
-      UPDATE tickets
-      SET
-        category_id = COALESCE($1, category_id),
-        priority = COALESCE($2, priority),
-        updated_at = NOW()
-      WHERE ticket_id = $3
-      RETURNING *
-      `,
+        UPDATE tickets
+        SET
+          category_id = COALESCE($1, category_id),
+          priority = COALESCE($2, priority),
+          updated_at = NOW()
+        WHERE ticket_id = $3
+        RETURNING *
+        `,
         [
           category_id || null,
           priority || null,
@@ -1159,9 +1192,6 @@ const updateTicketTriage = async (
     const updatedTicket =
       result.rows[0];
 
-    /**
-     * 9. Create category change event
-     */
     if (
       category_id &&
       category_id !== ticket.category_id
@@ -1194,9 +1224,6 @@ const updateTicketTriage = async (
       );
     }
 
-    /**
-     * 10. Create priority change event
-     */
     if (
       priority &&
       priority !== ticket.priority
@@ -1229,9 +1256,6 @@ const updateTicketTriage = async (
       );
     }
 
-    /**
-     * 11. Audit log
-     */
     await writeAuditLog({
       client,
 
@@ -1267,14 +1291,8 @@ const updateTicketTriage = async (
         req.ip,
     });
 
-    /**
-     * 12. Commit transaction
-     */
     await client.query("COMMIT");
 
-    /**
-     * 13. Response
-     */
     return res.status(200).json({
       success: true,
 
@@ -1315,9 +1333,6 @@ const updateTicketStatus = async (
   try {
     const { id } = req.params;
 
-    /**
-     * Validate UUID before querying PostgreSQL.
-     */
     if (!validateTicketId(id, res)) {
       return;
     }
@@ -1327,9 +1342,6 @@ const updateTicketStatus = async (
       reason,
     } = req.body;
 
-    /**
-     * 1. Validate status
-     */
     if (!status) {
       return res.status(400).json({
         success: false,
@@ -1350,9 +1362,6 @@ const updateTicketStatus = async (
       });
     }
 
-    /**
-     * 2. Check ticket access
-     */
     const access =
       await canAccessTicket(
         req.user,
@@ -1367,16 +1376,13 @@ const updateTicketStatus = async (
       });
     }
 
-    /**
-     * 3. Get ticket
-     */
     const ticketResult =
       await client.query(
         `
-      SELECT *
-      FROM tickets
-      WHERE ticket_id = $1
-      `,
+        SELECT *
+        FROM tickets
+        WHERE ticket_id = $1
+        `,
         [id]
       );
 
@@ -1392,9 +1398,6 @@ const updateTicketStatus = async (
     const ticket =
       ticketResult.rows[0];
 
-    /**
-     * 4. Reporters cannot change status
-     */
     if (
       req.user.role === "REPORTER"
     ) {
@@ -1418,9 +1421,6 @@ const updateTicketStatus = async (
       });
     }
 
-    /**
-     * 5. Prevent duplicate status transition
-     */
     if (
       ticket.status === status
     ) {
@@ -1476,9 +1476,6 @@ const updateTicketStatus = async (
     let closedAt =
       ticket.closed_at;
 
-    /**
-     * First response
-     */
     if (
       !firstResponseAt &&
       status === "IN_PROGRESS"
@@ -1487,9 +1484,6 @@ const updateTicketStatus = async (
         now;
     }
 
-    /**
-     * Resolution
-     */
     if (
       status === "RESOLVED" &&
       !resolvedAt
@@ -1498,9 +1492,6 @@ const updateTicketStatus = async (
         now;
     }
 
-    /**
-     * Closure
-     */
     if (
       status === "CLOSED" &&
       !closedAt
@@ -1516,22 +1507,19 @@ const updateTicketStatus = async (
       closedAt = null;
     }
 
-    /**
-     * 6. Update ticket
-     */
     const result =
       await client.query(
         `
-      UPDATE tickets
-      SET
-        status = $1,
-        first_response_at = $2,
-        resolved_at = $3,
-        closed_at = $4,
-        updated_at = NOW()
-      WHERE ticket_id = $5
-      RETURNING *
-      `,
+        UPDATE tickets
+        SET
+          status = $1,
+          first_response_at = $2,
+          resolved_at = $3,
+          closed_at = $4,
+          updated_at = NOW()
+        WHERE ticket_id = $5
+        RETURNING *
+        `,
         [
           status,
           firstResponseAt,
@@ -1541,9 +1529,6 @@ const updateTicketStatus = async (
         ]
       );
 
-    /**
-     * 7. Status history
-     */
     await client.query(
       `
       INSERT INTO status_histories (
@@ -1565,9 +1550,6 @@ const updateTicketStatus = async (
       ]
     );
 
-    /**
-     * 8. Business event
-     */
     await client.query(
       `
       INSERT INTO ticket_events (
@@ -1671,8 +1653,6 @@ const updateTicketStatus = async (
 
 /**
  * POST /api/tickets/:id/confirm-resolution
- *
- * A reporter confirms a resolved ticket and closes it.
  */
 const confirmResolution = async (
   req,
@@ -1685,9 +1665,6 @@ const confirmResolution = async (
     const { id } =
       req.params;
 
-    /**
-     * Validate UUID before querying PostgreSQL.
-     */
     if (!validateTicketId(id, res)) {
       return;
     }
@@ -1695,14 +1672,14 @@ const confirmResolution = async (
     const ticketResult =
       await client.query(
         `
-      SELECT
-        ticket_id,
-        reporter_id,
-        reference_number,
-        status
-      FROM tickets
-      WHERE ticket_id = $1
-      `,
+        SELECT
+          ticket_id,
+          reporter_id,
+          reference_number,
+          status
+        FROM tickets
+        WHERE ticket_id = $1
+        `,
         [id]
       );
 
@@ -1748,14 +1725,14 @@ const confirmResolution = async (
     const result =
       await client.query(
         `
-      UPDATE tickets
-      SET
-        status = 'CLOSED',
-        closed_at = NOW(),
-        updated_at = NOW()
-      WHERE ticket_id = $1
-      RETURNING *
-      `,
+        UPDATE tickets
+        SET
+          status = 'CLOSED',
+          closed_at = NOW(),
+          updated_at = NOW()
+        WHERE ticket_id = $1
+        RETURNING *
+        `,
         [id]
       );
 
@@ -1889,8 +1866,6 @@ const confirmResolution = async (
 
 /**
  * POST /api/tickets/:id/reopen
- *
- * A reporter can reopen a resolved ticket during the configured window.
  */
 const reopenTicket = async (
   req,
@@ -1903,9 +1878,6 @@ const reopenTicket = async (
     const { id } =
       req.params;
 
-    /**
-     * Validate UUID before querying PostgreSQL.
-     */
     if (!validateTicketId(id, res)) {
       return;
     }
@@ -1919,15 +1891,15 @@ const reopenTicket = async (
     const ticketResult =
       await client.query(
         `
-      SELECT
-        ticket_id,
-        reporter_id,
-        reference_number,
-        status,
-        resolved_at
-      FROM tickets
-      WHERE ticket_id = $1
-      `,
+        SELECT
+          ticket_id,
+          reporter_id,
+          reference_number,
+          status,
+          resolved_at
+        FROM tickets
+        WHERE ticket_id = $1
+        `,
         [id]
       );
 
@@ -2009,15 +1981,15 @@ const reopenTicket = async (
     const result =
       await client.query(
         `
-      UPDATE tickets
-      SET
-        status = 'REOPENED',
-        resolved_at = NULL,
-        closed_at = NULL,
-        updated_at = NOW()
-      WHERE ticket_id = $1
-      RETURNING *
-      `,
+        UPDATE tickets
+        SET
+          status = 'REOPENED',
+          resolved_at = NULL,
+          closed_at = NULL,
+          updated_at = NOW()
+        WHERE ticket_id = $1
+        RETURNING *
+        `,
         [id]
       );
 
