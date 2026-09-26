@@ -556,429 +556,333 @@ const openapiDocument = {
       },
     },
 
-    /*
-     * =========================
-     * CATEGORIES
-     * =========================
-     */
+     /*
+  * =========================
+  * CATEGORIES
+  * =========================
+  */
 
-    "/api/categories": {
-      get: {
-        tags: ["Categories"],
-        summary: "Get all categories",
-        responses: {
-          200: {
-            description: "Categories retrieved successfully",
-          },
-        },
+ "/api/categories": {
+   get: {
+     tags: ["Categories"],
+     summary: "Get all categories",
+     security: [{ bearerAuth: [] }],
+     responses: {
+       200: {
+         description: "Categories retrieved successfully",
+       },
+       401: {
+         description: "Authentication required",
+       },
+       500: {
+         description: "Server error",
+       },
+     },
+   },
+
+   post: {
+     tags: ["Categories"],
+     summary: "Create category",
+     security: [{ bearerAuth: [] }],
+
+     requestBody: {
+       required: true,
+       content: {
+         "application/json": {
+           schema: {
+             type: "object",
+             required: ["name"],
+             properties: {
+               name: {
+                 type: "string",
+                 description: "Category name.",
+                 example: "Software",
+               },
+               description: {
+                 type: "string",
+                 nullable: true,
+                 description: "Optional category description.",
+                 example: "Software and application related issues.",
+               },
+               is_active: {
+                 type: "boolean",
+                 description: "Whether the category is active.",
+                 example: true,
+               },
+             },
+           },
+
+           example: {
+             name: "Software",
+             description: "Software and application related issues.",
+             is_active: true,
+           },
+         },
+       },
+     },
+
+     responses: {
+       201: {
+         description: "Category created successfully",
+       },
+       400: {
+         description: "Invalid category data",
+       },
+       401: {
+         description: "Authentication required",
+       },
+       409: {
+         description: "Category already exists",
+       },
+       500: {
+         description: "Server error",
+       },
+     },
+   },
+ },
+
+ "/api/categories/{id}": {
+   get: {
+     tags: ["Categories"],
+     summary: "Get category by ID",
+
+     parameters: [
+       {
+         name: "id",
+         in: "path",
+         required: true,
+         description: "Category UUID.",
+         schema: {
+           type: "string",
+           format: "uuid",
+         },
+       },
+     ],
+
+     responses: {
+       200: {
+         description: "Category retrieved successfully",
+       },
+       404: {
+         description: "Category not found",
+       },
+       500: {
+         description: "Server error",
+       },
+     },
+   },
+
+   put: {
+     tags: ["Categories"],
+     summary: "Update category",
+     security: [{ bearerAuth: [] }],
+
+     parameters: [
+       {
+         name: "id",
+         in: "path",
+         required: true,
+         description: "Category UUID.",
+         schema: {
+           type: "string",
+           format: "uuid",
+         },
+       },
+     ],
+
+     requestBody: {
+       required: true,
+       content: {
+         "application/json": {
+           schema: {
+             type: "object",
+             properties: {
+               name: {
+                 type: "string",
+                 description: "Updated category name.",
+                 example: "Hardware",
+               },
+               description: {
+                 type: "string",
+                 nullable: true,
+                 description: "Updated category description.",
+                 example: "Computer hardware related issues.",
+               },
+               is_active: {
+                 type: "boolean",
+                 description: "Whether the category is active.",
+                 example: true,
+               },
+             },
+           },
+
+           example: {
+             name: "Hardware",
+             description: "Computer hardware related issues.",
+             is_active: true,
+           },
+         },
+       },
+     },
+
+     responses: {
+       200: {
+         description: "Category updated successfully",
+       },
+       400: {
+         description: "Invalid category data",
+       },
+       401: {
+         description: "Authentication required",
+       },
+       404: {
+         description: "Category not found",
+       },
+       409: {
+         description: "Category already exists",
+       },
+       500: {
+         description: "Server error",
+       },
+     },
+   },
+ },
+   /*
+ * =========================
+ * LOCATIONS
+ * =========================
+ */
+
+"/api/locations": {
+  get: {
+    tags: ["Locations"],
+    summary: "Get all locations",
+    security: [{ bearerAuth: [] }],
+    responses: {
+      200: {
+        description: "Locations retrieved successfully",
       },
-
-      post: {
-        tags: ["Categories"],
-        summary: "Create category",
-        security: [{ bearerAuth: [] }],
-        responses: {
-          201: {
-            description: "Category created successfully",
-          },
-        },
+      401: {
+        description: "Authentication required",
       },
-    },
-
-    "/api/categories/{id}": {
-      get: {
-        tags: ["Categories"],
-        summary: "Get category by ID",
-        parameters: [
-          {
-            name: "id",
-            in: "path",
-            required: true,
-            schema: {
-              type: "string",
-              format: "uuid",
-            },
-          },
-        ],
-        responses: {
-          200: {
-            description: "Category retrieved successfully",
-          },
-        },
-      },
-
-      put: {
-        tags: ["Categories"],
-        summary: "Update category",
-        security: [{ bearerAuth: [] }],
-        parameters: [
-          {
-            name: "id",
-            in: "path",
-            required: true,
-            schema: {
-              type: "string",
-              format: "uuid",
-            },
-          },
-        ],
-        responses: {
-          200: {
-            description: "Category updated successfully",
-          },
-        },
-      },
-    },
-
-    /*
-     * =========================
-     * LOCATIONS
-     * =========================
-     */
-
-    "/api/locations": {
-      get: {
-        tags: ["Locations"],
-        summary: "Get all locations",
-        responses: {
-          200: {
-            description: "Locations retrieved successfully",
-          },
-        },
-      },
-
-      post: {
-        tags: ["Locations"],
-        summary: "Create location",
-        security: [{ bearerAuth: [] }],
-        responses: {
-          201: {
-            description: "Location created successfully",
-          },
-        },
-      },
-    },
-
-    "/api/locations/{id}": {
-      get: {
-        tags: ["Locations"],
-        summary: "Get location by ID",
-        parameters: [
-          {
-            name: "id",
-            in: "path",
-            required: true,
-            schema: {
-              type: "string",
-              format: "uuid",
-            },
-          },
-        ],
-        responses: {
-          200: {
-            description: "Location retrieved successfully",
-          },
-        },
-      },
-
-      put: {
-        tags: ["Locations"],
-        summary: "Update location",
-        security: [{ bearerAuth: [] }],
-        parameters: [
-          {
-            name: "id",
-            in: "path",
-            required: true,
-            schema: {
-              type: "string",
-              format: "uuid",
-            },
-          },
-        ],
-        responses: {
-          200: {
-            description: "Location updated successfully",
-          },
-        },
-      },
-    },
-
-    /*
-     * =========================
-     * SUPPORT TEAMS
-     * =========================
-     */
-
-    "/api/support-teams": {
-      get: {
-        tags: ["Support Teams"],
-        summary: "Get all support teams",
-        responses: {
-          200: {
-            description: "Support teams retrieved successfully",
-          },
-        },
-      },
-
-      post: {
-        tags: ["Support Teams"],
-        summary: "Create support team",
-        security: [{ bearerAuth: [] }],
-        responses: {
-          201: {
-            description: "Support team created successfully",
-          },
-        },
-      },
-    },
-
-    "/api/support-teams/{id}": {
-      get: {
-        tags: ["Support Teams"],
-        summary: "Get support team by ID",
-        parameters: [
-          {
-            name: "id",
-            in: "path",
-            required: true,
-            schema: {
-              type: "string",
-              format: "uuid",
-            },
-          },
-        ],
-        responses: {
-          200: {
-            description: "Support team retrieved successfully",
-          },
-        },
-      },
-
-      put: {
-        tags: ["Support Teams"],
-        summary: "Update support team",
-        security: [{ bearerAuth: [] }],
-        parameters: [
-          {
-            name: "id",
-            in: "path",
-            required: true,
-            schema: {
-              type: "string",
-              format: "uuid",
-            },
-          },
-        ],
-        responses: {
-          200: {
-            description: "Support team updated successfully",
-          },
-        },
+      500: {
+        description: "Server error",
       },
     },
+  },
 
-    /*
-     * =========================
-     * TICKETS
-     * =========================
-     */
+  post: {
+    tags: ["Locations"],
+    summary: "Create location",
+    security: [{ bearerAuth: [] }],
 
-    "/api/tickets": {
-      get: {
-        tags: ["Tickets"],
-        summary: "Get tickets",
-        security: [{ bearerAuth: [] }],
-        responses: {
-          200: {
-            description: "Tickets retrieved successfully",
-          },
-        },
-      },
+    requestBody: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+            required: ["building_name", "room_name"],
+            properties: {
+              building_name: {
+                type: "string",
+                description: "Building name.",
+                example: "AI Building",
+              },
 
-      post: {
-        tags: ["Tickets"],
-        summary: "Create ticket",
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: [
-                  "category_id",
-                  "location_id",
-                  "title",
-                  "description",
-                  "impact",
-                  "urgency",
-                ],
-                properties: {
-                  category_id: {
-                    type: "string",
-                    format: "uuid",
-                  },
-                  location_id: {
-                    type: "string",
-                    format: "uuid",
-                  },
-                  asset_id: {
-                    type: "string",
-                    format: "uuid",
-                    nullable: true,
-                  },
-                  title: {
-                    type: "string",
-                    example: "Projector not working",
-                  },
-                  description: {
-                    type: "string",
-                    example:
-                      "The projector in room 204 is not displaying anything.",
-                  },
-                  impact: {
-                    type: "string",
-                    enum: ["LOW", "MEDIUM", "HIGH"],
-                  },
-                  urgency: {
-                    type: "string",
-                    enum: ["LOW", "MEDIUM", "HIGH"],
-                  },
-                },
+              room_name: {
+                type: "string",
+                description: "Room or lab name.",
+                example: "LAB-101",
+              },
+
+              floor: {
+                type: "string",
+                nullable: true,
+                description: "Floor where the location is located.",
+                example: "1",
+              },
+
+              description: {
+                type: "string",
+                nullable: true,
+                description: "Optional location description.",
+                example: "Artificial Intelligence laboratory.",
+              },
+
+              is_active: {
+                type: "boolean",
+                description: "Whether the location is active.",
+                example: true,
               },
             },
           },
-        },
-        responses: {
-          201: {
-            description: "Ticket created successfully",
-          },
-          400: {
-            description: "Invalid request",
-          },
-          401: {
-            description: "Authentication required",
-          },
-          403: {
-            description: "Only reporters can create tickets",
+
+          example: {
+            building_name: "AI Building",
+            room_name: "LAB-101",
+            floor: "1",
+            description: "Artificial Intelligence laboratory.",
+            is_active: true,
           },
         },
       },
     },
 
-    "/api/tickets/{id}": {
-      get: {
-        tags: ["Tickets"],
-        summary: "Get ticket by ID",
-        security: [{ bearerAuth: [] }],
-        parameters: [
-          {
-            name: "id",
-            in: "path",
-            required: true,
-            schema: {
-              type: "string",
-              format: "uuid",
-            },
-          },
-        ],
-        responses: {
-          200: {
-            description: "Ticket retrieved successfully",
-          },
-          404: {
-            description: "Ticket not found",
-          },
-        },
+    responses: {
+      201: {
+        description: "Location created successfully",
+      },
+      400: {
+        description: "Invalid location data",
+      },
+      401: {
+        description: "Authentication required",
+      },
+      409: {
+        description: "Location already exists",
+      },
+      500: {
+        description: "Server error",
       },
     },
+  },
+},
 
-    "/api/tickets/{id}/status": {
-      patch: {
-        tags: ["Tickets"],
-        summary: "Update ticket status",
-        description:
-          "Update the status of a ticket according to the allowed lifecycle transitions.",
-        security: [{ bearerAuth: [] }],
+"/api/locations/{id}": {
+  get: {
+    tags: ["Locations"],
+    summary: "Get location by ID",
 
-        parameters: [
-          {
-            name: "id",
-            in: "path",
-            required: true,
-            schema: {
-              type: "string",
-              format: "uuid",
-            },
-          },
-        ],
-
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["status"],
-                properties: {
-                  status: {
-                    type: "string",
-                    enum: [
-                      "NEW",
-                      "TRIAGED",
-                      "ASSIGNED",
-                      "IN_PROGRESS",
-                      "WAITING",
-                      "RESOLVED",
-                      "REOPENED",
-                      "CLOSED",
-                    ],
-                  },
-                  reason: {
-                    type: "string",
-                    description:
-                      "Optional reason for the status change.",
-                  },
-                },
-              },
-              example: {
-                status: "TRIAGED",
-                reason: "Ticket triaged by support agent",
-              },
-            },
-          },
-        },
-
-        responses: {
-          200: {
-            description: "Ticket status updated successfully",
-          },
-          400: {
-            description: "Invalid status value or transition",
-          },
-          401: {
-            description: "Authentication required",
-          },
-          403: {
-            description: "Not authorized to update ticket status",
-          },
-          404: {
-            description: "Ticket not found",
-          },
-          409: {
-            description: "Invalid ticket status transition",
-          },
+    parameters: [
+      {
+        name: "id",
+        in: "path",
+        required: true,
+        description: "Location UUID.",
+        schema: {
+          type: "string",
+          format: "uuid",
         },
       },
-    },
+    ],
 
-    "/api/tickets/{id}/triage": {
-  patch: {
-    tags: ["Tickets"],
-    summary: "Update ticket category and priority",
-    description:
-      "Allows an Agent to update the category and/or priority of an existing ticket during triage.",
+    responses: {
+      200: {
+        description: "Location retrieved successfully",
+      },
+      404: {
+        description: "Location not found",
+      },
+      500: {
+        description: "Server error",
+      },
+    },
+  },
+
+  put: {
+    tags: ["Locations"],
+    summary: "Update location",
     security: [{ bearerAuth: [] }],
 
     parameters: [
@@ -986,7 +890,7 @@ const openapiDocument = {
         name: "id",
         in: "path",
         required: true,
-        description: "Ticket ID",
+        description: "Location UUID.",
         schema: {
           type: "string",
           format: "uuid",
@@ -1001,10 +905,606 @@ const openapiDocument = {
           schema: {
             type: "object",
             properties: {
+              building_name: {
+                type: "string",
+                description: "Updated building name.",
+                example: "Engineering Building",
+              },
+
+              room_name: {
+                type: "string",
+                description: "Updated room or lab name.",
+                example: "LAB-201",
+              },
+
+              floor: {
+                type: "string",
+                nullable: true,
+                description: "Updated floor.",
+                example: "2",
+              },
+
+              description: {
+                type: "string",
+                nullable: true,
+                description: "Updated location description.",
+                example: "Engineering computer laboratory.",
+              },
+
+              is_active: {
+                type: "boolean",
+                description: "Whether the location is active.",
+                example: true,
+              },
+            },
+          },
+
+          example: {
+            building_name: "Engineering Building",
+            room_name: "LAB-201",
+            floor: "2",
+            description: "Engineering computer laboratory.",
+            is_active: true,
+          },
+        },
+      },
+    },
+
+    responses: {
+      200: {
+        description: "Location updated successfully",
+      },
+      400: {
+        description: "Invalid location data",
+      },
+      401: {
+        description: "Authentication required",
+      },
+      404: {
+        description: "Location not found",
+      },
+      409: {
+        description: "Location already exists",
+      },
+      500: {
+        description: "Server error",
+      },
+    },
+  },
+},
+   /*
+ * =========================
+ * SUPPORT TEAMS
+ * =========================
+ */
+
+"/api/support-teams": {
+  get: {
+    tags: ["Support Teams"],
+    summary: "Get all support teams",
+    security: [{ bearerAuth: [] }],
+    responses: {
+      200: {
+        description: "Support teams retrieved successfully",
+      },
+      401: {
+        description: "Authentication required",
+      },
+      500: {
+        description: "Server error",
+      },
+    },
+  },
+
+  post: {
+    tags: ["Support Teams"],
+    summary: "Create support team",
+    security: [{ bearerAuth: [] }],
+
+    requestBody: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+            required: ["name"],
+            properties: {
+              name: {
+                type: "string",
+                description: "Support team name.",
+                example: "IT Support",
+              },
+
+              description: {
+                type: "string",
+                nullable: true,
+                description: "Optional support team description.",
+                example:
+                  "Team responsible for IT and software related issues.",
+              },
+
+              is_active: {
+                type: "boolean",
+                description: "Whether the support team is active.",
+                example: true,
+              },
+            },
+          },
+
+          example: {
+            name: "IT Support",
+            description:
+              "Team responsible for IT and software related issues.",
+            is_active: true,
+          },
+        },
+      },
+    },
+
+    responses: {
+      201: {
+        description: "Support team created successfully",
+      },
+      400: {
+        description: "Invalid support team data",
+      },
+      401: {
+        description: "Authentication required",
+      },
+      409: {
+        description: "Support team already exists",
+      },
+      500: {
+        description: "Server error",
+      },
+    },
+  },
+},
+
+"/api/support-teams/{id}": {
+  get: {
+    tags: ["Support Teams"],
+    summary: "Get support team by ID",
+
+    parameters: [
+      {
+        name: "id",
+        in: "path",
+        required: true,
+        description: "Support team UUID.",
+        schema: {
+          type: "string",
+          format: "uuid",
+        },
+      },
+    ],
+
+    responses: {
+      200: {
+        description: "Support team retrieved successfully",
+      },
+      404: {
+        description: "Support team not found",
+      },
+      500: {
+        description: "Server error",
+      },
+    },
+  },
+
+  put: {
+    tags: ["Support Teams"],
+    summary: "Update support team",
+    security: [{ bearerAuth: [] }],
+
+    parameters: [
+      {
+        name: "id",
+        in: "path",
+        required: true,
+        description: "Support team UUID.",
+        schema: {
+          type: "string",
+          format: "uuid",
+        },
+      },
+    ],
+
+    requestBody: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+            properties: {
+              name: {
+                type: "string",
+                description: "Updated support team name.",
+                example: "Network Team",
+              },
+
+              description: {
+                type: "string",
+                nullable: true,
+                description: "Updated support team description.",
+                example:
+                  "Team responsible for network and connectivity issues.",
+              },
+
+              is_active: {
+                type: "boolean",
+                description: "Whether the support team is active.",
+                example: true,
+              },
+            },
+          },
+
+          example: {
+            name: "Network Team",
+            description:
+              "Team responsible for network and connectivity issues.",
+            is_active: true,
+          },
+        },
+      },
+    },
+
+    responses: {
+      200: {
+        description: "Support team updated successfully",
+      },
+      400: {
+        description: "Invalid support team data",
+      },
+      401: {
+        description: "Authentication required",
+      },
+      404: {
+        description: "Support team not found",
+      },
+      409: {
+        description: "Support team already exists",
+      },
+      500: {
+        description: "Server error",
+      },
+    },
+  },
+},
+
+    /*
+ * =========================
+ * TICKETS
+ * =========================
+ */
+
+"/api/tickets": {
+  get: {
+    tags: ["Tickets"],
+    summary: "Get tickets",
+    security: [{ bearerAuth: [] }],
+    responses: {
+      200: {
+        description: "Tickets retrieved successfully",
+      },
+      401: {
+        description: "Authentication required",
+      },
+      500: {
+        description: "Server error",
+      },
+    },
+  },
+
+  post: {
+    tags: ["Tickets"],
+    summary: "Create ticket",
+    description:
+      "Create a new support ticket. Only users with the REPORTER role can create tickets.",
+
+    security: [{ bearerAuth: [] }],
+
+    requestBody: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+
+            required: [
+              "category_id",
+              "location_id",
+              "title",
+              "description",
+              "impact",
+              "urgency",
+            ],
+
+            properties: {
               category_id: {
                 type: "string",
                 format: "uuid",
-                description: "Active category ID.",
+                description: "Category assigned to the ticket.",
+                example:
+                  "20000000-0000-0000-0000-000000000001",
+              },
+
+              location_id: {
+                type: "string",
+                format: "uuid",
+                description: "Location where the issue occurred.",
+                example:
+                  "30000000-0000-0000-0000-000000000001",
+              },
+
+              asset_id: {
+                type: "string",
+                format: "uuid",
+                nullable: true,
+                description:
+                  "Optional asset UUID. Can be null because assets are not currently managed through a dedicated API.",
+                example: null,
+              },
+
+              title: {
+                type: "string",
+                description: "Short title describing the issue.",
+                example: "Projector not working",
+              },
+
+              description: {
+                type: "string",
+                description: "Detailed description of the issue.",
+                example:
+                  "The projector in room 204 is not displaying anything.",
+              },
+
+              impact: {
+                type: "string",
+                enum: ["LOW", "MEDIUM", "HIGH"],
+                description:
+                  "Business or operational impact of the issue.",
+                example: "HIGH",
+              },
+
+              urgency: {
+                type: "string",
+                enum: ["LOW", "MEDIUM", "HIGH"],
+                description:
+                  "How quickly the issue needs to be addressed.",
+                example: "HIGH",
+              },
+            },
+          },
+
+          example: {
+            category_id:
+              "20000000-0000-0000-0000-000000000001",
+
+            location_id:
+              "30000000-0000-0000-0000-000000000001",
+
+            asset_id: null,
+
+            title: "Projector not working",
+
+            description:
+              "The projector in room 204 is not displaying anything.",
+
+            impact: "HIGH",
+
+            urgency: "HIGH",
+          },
+        },
+      },
+    },
+
+    responses: {
+      201: {
+        description: "Ticket created successfully",
+      },
+      400: {
+        description:
+          "Invalid request, category, location, impact, or urgency",
+      },
+      401: {
+        description: "Authentication required",
+      },
+      403: {
+        description: "Only reporters can create tickets",
+      },
+      404: {
+        description:
+          "Category or location not found",
+      },
+      500: {
+        description: "Server error",
+      },
+    },
+  },
+},
+
+"/api/tickets/{id}": {
+  get: {
+    tags: ["Tickets"],
+    summary: "Get ticket by ID",
+    security: [{ bearerAuth: [] }],
+
+    parameters: [
+      {
+        name: "id",
+        in: "path",
+        required: true,
+        description: "Ticket UUID.",
+        schema: {
+          type: "string",
+          format: "uuid",
+        },
+      },
+    ],
+
+    responses: {
+      200: {
+        description: "Ticket retrieved successfully",
+      },
+      400: {
+        description: "Invalid ticket ID",
+      },
+      401: {
+        description: "Authentication required",
+      },
+      404: {
+        description: "Ticket not found",
+      },
+      500: {
+        description: "Server error",
+      },
+    },
+  },
+},
+
+"/api/tickets/{id}/status": {
+  patch: {
+    tags: ["Tickets"],
+    summary: "Update ticket status",
+
+    description:
+      "Update the status of a ticket according to the allowed lifecycle transitions.",
+
+    security: [{ bearerAuth: [] }],
+
+    parameters: [
+      {
+        name: "id",
+        in: "path",
+        required: true,
+        description: "Ticket UUID.",
+        schema: {
+          type: "string",
+          format: "uuid",
+        },
+      },
+    ],
+
+    requestBody: {
+      required: true,
+
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+
+            required: ["status"],
+
+            properties: {
+              status: {
+                type: "string",
+                enum: [
+                  "NEW",
+                  "TRIAGED",
+                  "ASSIGNED",
+                  "IN_PROGRESS",
+                  "WAITING",
+                  "RESOLVED",
+                  "REOPENED",
+                  "CLOSED",
+                ],
+                description: "New ticket status.",
+                example: "TRIAGED",
+              },
+
+              reason: {
+                type: "string",
+                nullable: true,
+                description:
+                  "Optional reason for the status change.",
+                example:
+                  "Ticket triaged by support agent",
+              },
+            },
+          },
+
+          example: {
+            status: "TRIAGED",
+            reason:
+              "Ticket triaged by support agent",
+          },
+        },
+      },
+    },
+
+    responses: {
+      200: {
+        description:
+          "Ticket status updated successfully",
+      },
+      400: {
+        description:
+          "Invalid status value or transition",
+      },
+      401: {
+        description:
+          "Authentication required",
+      },
+      403: {
+        description:
+          "Not authorized to update ticket status",
+      },
+      404: {
+        description:
+          "Ticket not found",
+      },
+      409: {
+        description:
+          "Invalid ticket status transition",
+      },
+      500: {
+        description:
+          "Server error",
+      },
+    },
+  },
+},
+
+"/api/tickets/{id}/triage": {
+  patch: {
+    tags: ["Tickets"],
+    summary: "Update ticket category and priority",
+
+    description:
+      "Allows an Agent to update the category and/or priority of an existing ticket during triage.",
+
+    security: [{ bearerAuth: [] }],
+
+    parameters: [
+      {
+        name: "id",
+        in: "path",
+        required: true,
+        description: "Ticket UUID.",
+        schema: {
+          type: "string",
+          format: "uuid",
+        },
+      },
+    ],
+
+    requestBody: {
+      required: true,
+
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+
+            properties: {
+              category_id: {
+                type: "string",
+                format: "uuid",
+                description:
+                  "Active category ID.",
+                example:
+                  "20000000-0000-0000-0000-000000000004",
               },
 
               priority: {
@@ -1015,14 +1515,18 @@ const openapiDocument = {
                   "HIGH",
                   "CRITICAL",
                 ],
-                description: "Ticket priority.",
+                description:
+                  "Ticket priority.",
+                example: "HIGH",
               },
             },
+
+            minProperties: 1,
           },
 
           example: {
             category_id:
-              "20000000-0000-0000-0000-000000000001",
+              "20000000-0000-0000-0000-000000000004",
             priority: "HIGH",
           },
         },
@@ -1058,175 +1562,433 @@ const openapiDocument = {
   },
 },
 
-    "/api/tickets/{id}/confirm-resolution": {
-      post: {
-        tags: ["Tickets"],
-        summary: "Confirm a resolved ticket",
-        security: [{ bearerAuth: [] }],
-        parameters: [
-          {
-            name: "id",
-            in: "path",
-            required: true,
-            schema: {
-              type: "string",
-              format: "uuid",
-            },
-          },
-        ],
-        responses: {
-          200: {
-            description: "Resolution confirmed and ticket closed",
-          },
-          401: {
-            description: "Authentication required",
-          },
-          403: {
-            description: "Only the reporter can confirm resolution",
-          },
-          404: {
-            description: "Ticket not found",
-          },
+"/api/tickets/{id}/confirm-resolution": {
+  post: {
+    tags: ["Tickets"],
+    summary: "Confirm a resolved ticket",
+
+    description:
+      "Allows the reporter to confirm that the ticket has been resolved and close the ticket.",
+
+    security: [{ bearerAuth: [] }],
+
+    parameters: [
+      {
+        name: "id",
+        in: "path",
+        required: true,
+        description: "Ticket UUID.",
+        schema: {
+          type: "string",
+          format: "uuid",
         },
       },
-    },
+    ],
 
-    "/api/tickets/{id}/reopen": {
-      post: {
-        tags: ["Tickets"],
-        summary: "Reopen a recently resolved ticket",
-        security: [{ bearerAuth: [] }],
-        parameters: [
-          {
-            name: "id",
-            in: "path",
-            required: true,
-            schema: {
-              type: "string",
-              format: "uuid",
-            },
-          },
-        ],
-        requestBody: {
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                properties: {
-                  reason: {
-                    type: "string",
-                  },
-                },
+    responses: {
+      200: {
+        description:
+          "Resolution confirmed and ticket closed",
+      },
+      400: {
+        description:
+          "Ticket is not in a resolvable state",
+      },
+      401: {
+        description:
+          "Authentication required",
+      },
+      403: {
+        description:
+          "Only the reporter can confirm resolution",
+      },
+      404: {
+        description:
+          "Ticket not found",
+      },
+      500: {
+        description:
+          "Server error",
+      },
+    },
+  },
+},
+
+"/api/tickets/{id}/reopen": {
+  post: {
+    tags: ["Tickets"],
+    summary: "Reopen a recently resolved ticket",
+
+    description:
+      "Allows the reporter to reopen a recently resolved or closed ticket according to the business rules.",
+
+    security: [{ bearerAuth: [] }],
+
+    parameters: [
+      {
+        name: "id",
+        in: "path",
+        required: true,
+        description: "Ticket UUID.",
+        schema: {
+          type: "string",
+          format: "uuid",
+        },
+      },
+    ],
+
+    requestBody: {
+      required: false,
+
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+
+            properties: {
+              reason: {
+                type: "string",
+                description:
+                  "Reason for reopening the ticket.",
+                example:
+                  "The issue is still occurring after resolution.",
               },
             },
           },
-        },
-        responses: {
-          200: {
-            description: "Ticket reopened successfully",
-          },
-        },
-      },
-    },
 
-    /*
-     * =========================
-     * ASSIGNMENTS
-     * =========================
-     */
-
-    "/api/assignments": {
-      get: {
-        tags: ["Assignments"],
-        summary: "Get assignments",
-        security: [{ bearerAuth: [] }],
-        responses: {
-          200: {
-            description: "Assignments retrieved successfully",
-          },
-        },
-      },
-
-      post: {
-        tags: ["Assignments"],
-        summary: "Create assignment",
-        security: [{ bearerAuth: [] }],
-        responses: {
-          201: {
-            description: "Assignment created successfully",
+          example: {
+            reason:
+              "The issue is still occurring after resolution.",
           },
         },
       },
     },
 
-    "/api/assignments/{id}": {
-      get: {
-        tags: ["Assignments"],
-        summary: "Get assignment by ID",
-        security: [{ bearerAuth: [] }],
-        parameters: [
-          {
-            name: "id",
-            in: "path",
-            required: true,
-            schema: {
-              type: "string",
-              format: "uuid",
-            },
-          },
-        ],
-        responses: {
-          200: {
-            description: "Assignment retrieved successfully",
-          },
-        },
+    responses: {
+      200: {
+        description:
+          "Ticket reopened successfully",
       },
-
-      patch: {
-        tags: ["Assignments"],
-        summary: "Update assignment",
-        security: [{ bearerAuth: [] }],
-        parameters: [
-          {
-            name: "id",
-            in: "path",
-            required: true,
-            schema: {
-              type: "string",
-              format: "uuid",
-            },
-          },
-        ],
-        responses: {
-          200: {
-            description: "Assignment updated successfully",
-          },
-        },
+      400: {
+        description:
+          "Ticket cannot be reopened",
       },
+      401: {
+        description:
+          "Authentication required",
+      },
+      403: {
+        description:
+          "Only the reporter can reopen the ticket",
+      },
+      404: {
+        description:
+          "Ticket not found",
+      },
+      500: {
+        description:
+          "Server error",
+      },
+    },
+  },
+},
+   /*
+ * =========================
+ * ASSIGNMENTS
+ * =========================
+ */
 
-      delete: {
-        tags: ["Assignments"],
-        summary: "Delete assignment",
-        security: [{ bearerAuth: [] }],
-        parameters: [
-          {
-            name: "id",
-            in: "path",
-            required: true,
-            schema: {
-              type: "string",
-              format: "uuid",
+"/api/assignments": {
+  get: {
+    tags: ["Assignments"],
+    summary: "Get all assignments",
+    security: [{ bearerAuth: [] }],
+
+    responses: {
+      200: {
+        description: "Assignments retrieved successfully",
+      },
+      401: {
+        description: "Authentication required",
+      },
+      500: {
+        description: "Server error",
+      },
+    },
+  },
+
+  post: {
+    tags: ["Assignments"],
+    summary: "Create assignment",
+
+    description:
+      "Assign a technician to a ticket. The ticket must be in TRIAGED status before it can be assigned.",
+
+    security: [{ bearerAuth: [] }],
+
+    requestBody: {
+      required: true,
+
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+
+            required: [
+              "ticket_id",
+              "technician_id",
+            ],
+
+            properties: {
+              ticket_id: {
+                type: "string",
+                format: "uuid",
+                description:
+                  "UUID of the ticket to assign.",
+                example:
+                  "d68c8dcb-ffdc-513b-f84c-7e8cbdaa305f",
+              },
+
+              technician_id: {
+                type: "string",
+                format: "uuid",
+                description:
+                  "UUID of the technician who will be assigned.",
+                example:
+                  "00000000-0000-0000-0000-000000000006",
+              },
+
+              notes: {
+                type: "string",
+                nullable: true,
+                description:
+                  "Optional assignment notes.",
+                example:
+                  "Assign to technician for hardware inspection.",
+              },
             },
           },
-        ],
-        responses: {
-          200: {
-            description: "Assignment deleted successfully",
+
+          example: {
+            ticket_id:
+              "d68c8dcb-ffdc-513b-f84c-7e8cbdaa305f",
+
+            technician_id:
+              "00000000-0000-0000-0000-000000000006",
+
+            notes:
+              "Assign to technician for hardware inspection.",
           },
         },
       },
     },
 
+    responses: {
+      201: {
+        description:
+          "Assignment created successfully",
+      },
+      400: {
+        description:
+          "Invalid assignment data or ticket is not ready for assignment",
+      },
+      401: {
+        description:
+          "Authentication required",
+      },
+      403: {
+        description:
+          "User is not authorized to create assignments",
+      },
+      404: {
+        description:
+          "Ticket or technician not found",
+      },
+      409: {
+        description:
+          "Ticket cannot be assigned in its current state",
+      },
+      500: {
+        description:
+          "Server error",
+      },
+    },
+  },
+},
+
+"/api/assignments/{id}": {
+  get: {
+    tags: ["Assignments"],
+    summary: "Get assignment by ID",
+    security: [{ bearerAuth: [] }],
+
+    parameters: [
+      {
+        name: "id",
+        in: "path",
+        required: true,
+        description: "Assignment UUID.",
+        schema: {
+          type: "string",
+          format: "uuid",
+        },
+      },
+    ],
+
+    responses: {
+      200: {
+        description:
+          "Assignment retrieved successfully",
+      },
+      401: {
+        description:
+          "Authentication required",
+      },
+      404: {
+        description:
+          "Assignment not found",
+      },
+      500: {
+        description:
+          "Server error",
+      },
+    },
+  },
+
+  patch: {
+    tags: ["Assignments"],
+    summary: "Update assignment",
+
+    description:
+      "Update an existing ticket assignment.",
+
+    security: [{ bearerAuth: [] }],
+
+    parameters: [
+      {
+        name: "id",
+        in: "path",
+        required: true,
+        description: "Assignment UUID.",
+        schema: {
+          type: "string",
+          format: "uuid",
+        },
+      },
+    ],
+
+    requestBody: {
+      required: true,
+
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+
+            properties: {
+              technician_id: {
+                type: "string",
+                format: "uuid",
+                description:
+                  "UUID of the new technician.",
+                example:
+                  "00000000-0000-0000-000000000007",
+              },
+
+              notes: {
+                type: "string",
+                nullable: true,
+                description:
+                  "Updated assignment notes.",
+                example:
+                  "Reassigned for networking expertise.",
+              },
+            },
+
+            minProperties: 1,
+          },
+
+          example: {
+            technician_id:
+              "00000000-0000-0000-0000-000000000007",
+
+            notes:
+              "Reassigned for networking expertise.",
+          },
+        },
+      },
+    },
+
+    responses: {
+      200: {
+        description:
+          "Assignment updated successfully",
+      },
+      400: {
+        description:
+          "Invalid assignment data",
+      },
+      401: {
+        description:
+          "Authentication required",
+      },
+      403: {
+        description:
+          "User is not authorized to update assignments",
+      },
+      404: {
+        description:
+          "Assignment or technician not found",
+      },
+      500: {
+        description:
+          "Server error",
+      },
+    },
+  },
+
+  delete: {
+    tags: ["Assignments"],
+    summary: "Delete assignment",
+    security: [{ bearerAuth: [] }],
+
+    parameters: [
+      {
+        name: "id",
+        in: "path",
+        required: true,
+        description: "Assignment UUID.",
+        schema: {
+          type: "string",
+          format: "uuid",
+        },
+      },
+    ],
+
+    responses: {
+      200: {
+        description:
+          "Assignment deleted successfully",
+      },
+      401: {
+        description:
+          "Authentication required",
+      },
+      403: {
+        description:
+          "User is not authorized to delete assignments",
+      },
+      404: {
+        description:
+          "Assignment not found",
+      },
+      500: {
+        description:
+          "Server error",
+      },
+    },
+  },
+},
     /*
      * =========================
      * COMMENTS
@@ -2502,17 +3264,111 @@ const openapiDocument = {
         },
       },
 
-      post: {
-        tags: ["Notifications"],
-        summary: "Create notification",
-        security: [{ bearerAuth: [] }],
-        responses: {
-          201: {
-            description: "Notification created successfully",
+     post: {
+  tags: ["Notifications"],
+  summary: "Create notification",
+  description:
+    "Create a notification for an active user. Ticket and related user are optional.",
+  security: [{ bearerAuth: [] }],
+
+  requestBody: {
+    required: true,
+    content: {
+      "application/json": {
+        schema: {
+          type: "object",
+          required: [
+            "recipient_user_id",
+            "notification_type",
+            "title",
+            "body",
+          ],
+          properties: {
+            recipient_user_id: {
+              type: "string",
+              format: "uuid",
+              description: "User who will receive the notification.",
+              example:
+                "00000000-0000-0000-0000-000000000008",
+            },
+
+            ticket_id: {
+              type: "string",
+              format: "uuid",
+              nullable: true,
+              description:
+                "Optional ticket associated with the notification.",
+              example:
+                "d68c8dcb-ffdc-513b-f84c-7e8cbdaa305f",
+            },
+
+            related_user_id: {
+              type: "string",
+              format: "uuid",
+              nullable: true,
+              description:
+                "Optional user related to the notification.",
+              example:
+                "00000000-0000-0000-0000-000000000005",
+            },
+
+            notification_type: {
+              type: "string",
+              description: "Type of notification.",
+              example: "TICKET_ASSIGNED",
+            },
+
+            title: {
+              type: "string",
+              description: "Notification title.",
+              example: "Ticket assigned",
+            },
+
+            body: {
+              type: "string",
+              description: "Notification message.",
+              example:
+                "Ticket HLP-0027 has been assigned to you.",
+            },
           },
+        },
+
+        example: {
+          recipient_user_id:
+            "00000000-0000-0000-0000-000000000008",
+          ticket_id:
+            "d68c8dcb-ffdc-513b-f84c-7e8cbdaa305f",
+          related_user_id:
+            "00000000-0000-0000-0000-000000000005",
+          notification_type: "TICKET_ASSIGNED",
+          title: "Ticket assigned",
+          body:
+            "Ticket HLP-0027 has been assigned to you.",
         },
       },
     },
+  },
+
+  responses: {
+    201: {
+      description: "Notification created successfully",
+    },
+    400: {
+      description:
+        "Required fields are missing or recipient user is inactive",
+    },
+    401: {
+      description: "Authentication required",
+    },
+    404: {
+      description:
+        "Recipient, ticket, or related user not found",
+    },
+    500: {
+      description: "Server error",
+    },
+  },
+},
 
     "/api/notifications/read-all": {
       patch: {
@@ -2882,6 +3738,6 @@ const openapiDocument = {
       },
     },
   },
-};
+},};
 
 module.exports = openapiDocument;
