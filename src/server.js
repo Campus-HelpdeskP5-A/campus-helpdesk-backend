@@ -3,11 +3,25 @@ const app = require("./app");
 const {
   startSlaMonitor,
 } = require("./services/sla.service");
+const {
+  ensureDbAlignment,
+} = require("./utils/bootAlign");
 
 const PORT = process.env.PORT || 5000;
 
-startSlaMonitor();
+(async () => {
+  try {
+    await ensureDbAlignment();
+  } catch (error) {
+    console.error(
+      "DB alignment failed (server starting anyway):",
+      error.message
+    );
+  }
 
-app.listen(PORT, () => {
-  console.log(`Campus Helpdesk API running on port ${PORT}`);
-});
+  startSlaMonitor();
+
+  app.listen(PORT, () => {
+    console.log(`Campus Helpdesk API running on port ${PORT}`);
+  });
+})();

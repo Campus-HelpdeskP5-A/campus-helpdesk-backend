@@ -14,6 +14,9 @@ const pool = new Pool({
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   ssl: useSsl ? { rejectUnauthorized: false } : false,
+  // Fail fast instead of hanging forever (e.g. Neon cold start):
+  // callers return JSON 500 and the user retries against a warm DB.
+  connectionTimeoutMillis: 20000,
 });
 
 pool.on("connect", () => {

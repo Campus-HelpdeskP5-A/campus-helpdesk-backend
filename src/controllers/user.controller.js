@@ -520,9 +520,11 @@ const updateUserStatus = async (req, res) => {
  * The route-level authorization is added in user.routes.js.
  */
 const approveUser = async (req, res) => {
-  const client = await pool.connect();
+  let client;
 
   try {
+    client = await pool.connect();
+
     const { id } = req.params;
 
     await client.query("BEGIN");
@@ -534,6 +536,7 @@ const approveUser = async (req, res) => {
         email,
         full_name,
         role,
+        requested_role,
         account_status
       FROM users
       WHERE user_id = $1
@@ -555,8 +558,14 @@ const approveUser = async (req, res) => {
 
     /*
      * Only approval-required roles can be approved.
+     *
+     * Pending accounts may carry the role in requested_role
+     * (role can be NULL), so the effective role is checked.
      */
-    if (!APPROVAL_ROLES.includes(user.role)) {
+    const effectiveRole =
+      user.requested_role || user.role;
+
+    if (!APPROVAL_ROLES.includes(effectiveRole)) {
       await client.query("ROLLBACK");
 
       return res.status(400).json({
@@ -583,6 +592,7 @@ const approveUser = async (req, res) => {
       `
       UPDATE users
       SET
+        role = COALESCE(requested_role, role),
         account_status = $3,
         approved_by = $1,
         approved_at = NOW(),
@@ -645,7 +655,7 @@ const approveUser = async (req, res) => {
         },
         {
           account_status: "ACTIVE",
-          role: user.role,
+          role: effectiveRole,
           approved_by: req.user.user_id,
         },
         req.ip || null,
@@ -660,7 +670,11 @@ const approveUser = async (req, res) => {
       data: result.rows[0],
     });
   } catch (error) {
-    await client.query("ROLLBACK");
+    if (client) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (_) {}
+    }
 
     console.error("Approve user error:", error);
 
@@ -669,7 +683,9 @@ const approveUser = async (req, res) => {
       message: "Failed to approve user",
     });
   } finally {
-    client.release();
+    if (client) {
+      client.release();
+    }
   }
 };
 
